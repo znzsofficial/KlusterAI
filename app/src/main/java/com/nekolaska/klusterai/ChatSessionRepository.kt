@@ -32,7 +32,8 @@ data class SessionMeta(
     var title: String, // 会话标题
     var lastModifiedTimestamp: Long, // 最后修改时间戳
     var systemPrompt: String = DEFAULT_SYSTEM_PROMPT, // 会话特定的系统提示
-    var modelApiName: String = DEFAULT_MODEL_API_NAME // 会话特定的模型
+    var modelApiName: String = DEFAULT_MODEL_API_NAME, // 会话特定的模型
+    var temperature: Float = 0.7f // 温度设置，默认 0.7
 )
 
 object ChatSessionRepository {

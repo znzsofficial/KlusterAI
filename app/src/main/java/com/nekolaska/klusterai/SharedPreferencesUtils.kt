@@ -10,6 +10,7 @@ object SharedPreferencesUtils {
     private const val KEY_API_KEY = "api_key"
     private const val KEY_SELECTED_MODEL = "selected_model_api_name"
     private const val KEY_SYSTEM_PROMPT = "system_prompt"
+    private const val KEY_TEMPERATURE = "temperature"             // 全局默认温度
 
     private fun getPreferences(context: Context): SharedPreferences {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -37,5 +38,14 @@ object SharedPreferencesUtils {
 
     fun loadSystemPrompt(context: Context, defaultValue: String): String {
         return getPreferences(context).getString(KEY_SYSTEM_PROMPT, defaultValue) ?: defaultValue
+    }
+
+    // Temperature (Global Default)
+    fun saveTemperature(context: Context, temperature: Float) {
+        getPreferences(context).edit { putFloat(KEY_TEMPERATURE, temperature) }
+    }
+
+    fun loadTemperature(context: Context, defaultValue: Float): Float {
+        return getPreferences(context).getFloat(KEY_TEMPERATURE, defaultValue)
     }
 }
