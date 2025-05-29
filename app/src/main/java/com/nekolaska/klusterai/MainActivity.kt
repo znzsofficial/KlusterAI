@@ -83,8 +83,9 @@ const val DEFAULT_SYSTEM_PROMPT = """【系统限制】
 data class ModelInfo(val displayName: String, val apiName: String)
 
 val availableModels = listOf(
-    ModelInfo("DeepSeek-R1", "deepseek-ai/DeepSeek-R1"),
+    ModelInfo("DeepSeek-R1-0528", "deepseek-ai/DeepSeek-R1-0528"),
     ModelInfo("DeepSeek-V3-0324", "deepseek-ai/DeepSeek-V3-0324"),
+    ModelInfo("DeepSeek-R1", "deepseek-ai/DeepSeek-R1"),
     ModelInfo("Gemma 3 27B", "google/gemma-3-27b-it"),
     ModelInfo("Meta Llama 3.1 8B", "klusterai/Meta-Llama-3.1-8B-Instruct-Turbo"),
     ModelInfo("Meta Llama 3.3 70B", "klusterai/Meta-Llama-3.3-70B-Instruct-Turbo"),
