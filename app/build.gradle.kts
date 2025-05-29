@@ -41,9 +41,14 @@ android {
 }
 
 dependencies {
+    // image loader for markdown
+    implementation(libs.coil)
+    // markdown
+    implementation(libs.compose.markdown)
     implementation(libs.okhttp)
     implementation(libs.json)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.kotlinx.coroutines)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

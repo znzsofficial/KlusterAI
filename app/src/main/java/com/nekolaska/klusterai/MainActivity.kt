@@ -54,6 +54,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import com.nekolaska.klusterai.ui.theme.KlusterAITheme
+import dev.jeziellago.compose.markdowntext.MarkdownText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -157,7 +159,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme {
+            KlusterAITheme {
                 ChatScreen()
             }
         }
@@ -1226,7 +1228,6 @@ fun MessageBubble(message: MessageData, onLongClick: (MessageData) -> Unit) {
         "system" -> MaterialTheme.colorScheme.onTertiaryContainer
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
-
     var isThinkExpanded by remember { mutableStateOf(false) } // 控制思考内容展开/折叠
 
     if (message.role == "system" && message.content.isBlank()) return
@@ -1276,10 +1277,14 @@ fun MessageBubble(message: MessageData, onLongClick: (MessageData) -> Unit) {
                 Spacer(modifier = Modifier.height(4.dp)) // 角色和内容之间的间距
 
                 // 主要内容
-                Text(
-                    text = message.content,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = contentColor
+                MarkdownText(
+                    markdown = message.content,
+                    linkColor = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        color = contentColor,
+                    ),
+                    //style = MaterialTheme.typography.bodyLarge,
+                    //color = contentColor
                 )
 
                 // 思考内容部分
