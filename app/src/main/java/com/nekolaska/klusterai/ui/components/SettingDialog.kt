@@ -55,7 +55,10 @@ fun ExpandableSettingSection(
     content: @Composable () -> Unit
 ) {
     var isExpanded by remember { mutableStateOf(initiallyExpanded) }
-    val rotationAngle by animateFloatAsState(targetValue = if (isExpanded) 90f else 0f, label = "rotation")
+    val rotationAngle by animateFloatAsState(
+        targetValue = if (isExpanded) 90f else 0f,
+        label = "rotation"
+    )
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -78,7 +81,13 @@ fun ExpandableSettingSection(
             )
         }
         AnimatedVisibility(visible = isExpanded) {
-            Column(modifier = Modifier.padding(start = 8.dp, end = 8.dp, bottom = 8.dp)) { // 给内容一些内边距
+            Column(
+                modifier = Modifier.padding(
+                    start = 8.dp,
+                    end = 8.dp,
+                    bottom = 8.dp
+                )
+            ) { // 给内容一些内边距
                 content()
             }
         }
@@ -111,13 +120,16 @@ fun SettingsDialog(
     var frequencyPenaltyState by remember(currentModelSettings.frequencyPenalty) {
         mutableFloatStateOf(currentModelSettings.frequencyPenalty)
     }
+    var topPState by remember(currentModelSettings.topP) {
+        mutableFloatStateOf(currentModelSettings.topP)
+    }
     var autoShowDialogState by remember(currentModelSettings.autoShowStreamingDialog) {
         mutableStateOf(currentModelSettings.autoShowStreamingDialog)
     }
     var modelDropdownExpanded by remember { mutableStateOf(false) }
 
     // 控制哪些部分默认展开
-    val defaultExpansionState =false // 或者你可以根据 isGlobalSettingsMode 设置不同的默认值
+    val defaultExpansionState = false // 或者你可以根据 isGlobalSettingsMode 设置不同的默认值
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -127,12 +139,17 @@ fun SettingsDialog(
 
                 // API Key 设置 (仅全局模式)
                 if (isGlobalSettingsMode) {
-                    ExpandableSettingSection(title = "API 设置", initiallyExpanded = true) { // API Key 默认展开
+                    ExpandableSettingSection(
+                        title = "API 设置",
+                        initiallyExpanded = true
+                    ) { // API Key 默认展开
                         OutlinedTextField(
                             value = apiKeyInput,
                             onValueChange = { if (it.length <= 100) apiKeyInput = it },
                             label = { Text("API 密钥 (全局)") },
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
                             singleLine = true,
                             placeholder = { Text("在此输入您的 API Key") }
                         )
@@ -140,24 +157,41 @@ fun SettingsDialog(
                 }
 
                 // 模型和提示设置
-                ExpandableSettingSection(title = "模型与提示", initiallyExpanded = true) { // 模型和提示默认展开
-                    Text("选择模型:", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
+                ExpandableSettingSection(
+                    title = "模型与提示",
+                    initiallyExpanded = true
+                ) { // 模型和提示默认展开
+                    Text(
+                        "选择模型:",
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
                     ExposedDropdownMenuBox(
                         expanded = modelDropdownExpanded,
                         onExpandedChange = { modelDropdownExpanded = !modelDropdownExpanded },
                         modifier = Modifier.padding(vertical = 4.dp)
                     ) {
                         OutlinedTextField( // 保持之前的 ExposedDropdownMenuBox 逻辑
-                            value = availableModels.find { it.apiName == selectedModelApiNameState }?.displayName ?: "选择模型",
+                            value = availableModels.find { it.apiName == selectedModelApiNameState }?.displayName
+                                ?: "选择模型",
                             onValueChange = {}, readOnly = true, label = { Text("当前模型") },
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelDropdownExpanded) },
-                            modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+                            modifier = Modifier
+                                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                                .fillMaxWidth(),
                             colors = OutlinedTextFieldDefaults.colors()
                         )
-                        ExposedDropdownMenu(expanded = modelDropdownExpanded, onDismissRequest = { modelDropdownExpanded = false }) {
+                        ExposedDropdownMenu(
+                            expanded = modelDropdownExpanded,
+                            onDismissRequest = { modelDropdownExpanded = false }) {
                             availableModels.forEach { model ->
                                 DropdownMenuItem(
-                                    text = { Text(model.displayName, style = MaterialTheme.typography.bodyMedium) },
+                                    text = {
+                                        Text(
+                                            model.displayName,
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+                                    },
                                     onClick = {
                                         selectedModelApiNameState = model.apiName
                                         modelDropdownExpanded = false
@@ -171,18 +205,56 @@ fun SettingsDialog(
                         value = systemPromptInput,
                         onValueChange = { if (it.length <= 6000) systemPromptInput = it },
                         label = { Text("系统提示内容") },
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp, max = 200.dp).padding(bottom = 8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 100.dp, max = 200.dp)
+                            .padding(bottom = 8.dp),
                         minLines = 3, maxLines = 8,
                         placeholder = { Text(if (isGlobalSettingsMode) "输入全局默认系统提示..." else "输入当前会话的系统提示...") }
+                    )
+
+                    // 自动显示流式对话框设置
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { autoShowDialogState = !autoShowDialogState }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            "自动显示实时回复框",
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Switch(
+                            checked = autoShowDialogState,
+                            onCheckedChange = { autoShowDialogState = it },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = MaterialTheme.colorScheme.primary,
+                                checkedTrackColor = MaterialTheme.colorScheme.primaryContainer,
+                                uncheckedThumbColor = MaterialTheme.colorScheme.outline,
+                                uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+                            )
+                        )
+                    }
+                    Text(
+                        if (autoShowDialogState) "新回复时会自动弹出。" else "新回复时默认隐藏。",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(bottom = 8.dp)
                     )
                 }
 
                 // 高级模型参数设置
-                ExpandableSettingSection(title = "高级参数调整", initiallyExpanded = defaultExpansionState) {
+                ExpandableSettingSection(
+                    title = "高级参数调整",
+                    initiallyExpanded = defaultExpansionState
+                ) {
                     // 温度设置
                     Text(
                         "模型温度: ${String.format(Locale.US, "%.1f", temperatureState)}",
-                        style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp)
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(top = 8.dp)
                     )
                     Slider(
                         value = temperatureState,
@@ -191,7 +263,35 @@ fun SettingsDialog(
                         steps = ((2.0f - 0.0f) / 0.1f).toInt() - 1, // 每隔0.1
                         modifier = Modifier.padding(vertical = 4.dp)
                     )
-                    Text("较低值更确定，较高值更具创造性。", style = MaterialTheme.typography.bodySmall)
+
+                    Text(
+                        "较低值更确定，较高值更具创造性。",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Top-P 设置
+                    Text(
+                        "Top-P (核心采样): ${
+                            String.format(
+                                Locale.US,
+                                "%.2f",
+                                topPState
+                            )
+                        }", // 显示两位小数
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    Slider(
+                        value = topPState,
+                        onValueChange = { topPState = it },
+                        valueRange = 0.01f..1.0f, // Top-P 通常在 0 到 1 之间，0.0 可能无效
+                        steps = ((1.0f - 0.01f) / 0.01f).toInt() - 1, // 每隔 0.01，共 98 步 (0.01 到 1.00)
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+                    Text(
+                        "控制输出多样性，1.0 表示不限制。",
+                        style = MaterialTheme.typography.bodySmall
+                    )
                     Spacer(modifier = Modifier.height(12.dp))
 
                     // 频率惩罚设置
@@ -208,26 +308,6 @@ fun SettingsDialog(
                     )
                     Text("正值减少重复，负值鼓励重复。", style = MaterialTheme.typography.bodySmall)
                     Spacer(modifier = Modifier.height(12.dp))
-
-
-                    // 自动显示流式对话框设置
-                    Row(
-                        modifier = Modifier.fillMaxWidth().clickable { autoShowDialogState = !autoShowDialogState }.padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("自动显示实时回复框", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
-                        Switch(
-                            checked = autoShowDialogState,
-                            onCheckedChange = { autoShowDialogState = it },
-                            colors = SwitchDefaults.colors(/* ... */)
-                        )
-                    }
-                    Text(
-                        if(autoShowDialogState) "新回复时会自动弹出。" else "新回复时默认隐藏。",
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
                 }
 
                 // 会话特定设置的提示信息
@@ -245,15 +325,26 @@ fun SettingsDialog(
         },
         confirmButton = {
             TextButton(onClick = {
+                // 保存更改
                 val updatedModelSettings = ModelSettings(
                     temperature = temperatureState,
                     frequencyPenalty = frequencyPenaltyState,
-                    autoShowStreamingDialog = autoShowDialogState
+                    autoShowStreamingDialog = autoShowDialogState,
+                    topP = topPState
                 )
                 if (isGlobalSettingsMode) {
-                    onSaveGlobalDefaults(apiKeyInput, selectedModelApiNameState, systemPromptInput, updatedModelSettings)
+                    onSaveGlobalDefaults(
+                        apiKeyInput,
+                        selectedModelApiNameState,
+                        systemPromptInput,
+                        updatedModelSettings
+                    )
                 } else {
-                    onSaveSessionSpecific(selectedModelApiNameState, systemPromptInput, updatedModelSettings)
+                    onSaveSessionSpecific(
+                        selectedModelApiNameState,
+                        systemPromptInput,
+                        updatedModelSettings
+                    )
                 }
                 onDismiss()
             }) { Text("保存") }

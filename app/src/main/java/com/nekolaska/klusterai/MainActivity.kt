@@ -384,35 +384,6 @@ fun ConfirmActionDialog(
     )
 }
 
-//@Composable
-//fun ResetConfirmationDialog(
-//    onConfirm: () -> Unit,
-//    onDismiss: () -> Unit
-//) {
-//    AlertDialog(
-//        onDismissRequest = onDismiss,
-//        title = { Text("确认重置") },
-//        text = { Text("您确定要重置当前聊天吗？所有聊天记录将被清除。") },
-//        confirmButton = {
-//            TextButton(
-//                onClick = {
-//                    onConfirm()
-//                    onDismiss()
-//                }
-//            ) {
-//                Text("确认")
-//            }
-//        },
-//        dismissButton = {
-//            TextButton(onClick = onDismiss) {
-//                Text("取消")
-//            }
-//        },
-//        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-//        shape = MaterialTheme.shapes.large
-//    )
-//}
-
 // --- ChatScreen ---
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -1350,7 +1321,9 @@ suspend fun callLLMApi(
         put("stream", true) // 启用流式输出
         put("temperature", settings.temperature)
         put("frequency_penalty", settings.frequencyPenalty)
-        // if (settings.topP != null) put("top_p", settings.topP) // 如果添加了 top_p
+        if (settings.topP < 1.0f) { // 默认即为 1.0
+            put("top_p", settings.topP)
+        }
         // if (settings.maxTokens != null) put("max_tokens", settings.maxTokens)
     }
 
