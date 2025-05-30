@@ -114,6 +114,14 @@ fun SettingsDialog(
         mutableStateOf(currentSelectedModelApiName)
     }
     var systemPromptInput by remember(currentSystemPrompt) { mutableStateOf(currentSystemPrompt) }
+
+    var autoShowDialogState by remember(currentModelSettings.autoShowStreamingDialog) {
+        mutableStateOf(currentModelSettings.autoShowStreamingDialog)
+    }
+    var isTextSelectableState by remember(currentModelSettings.isTextSelectableInBubble) {
+        mutableStateOf(currentModelSettings.isTextSelectableInBubble)
+    }
+
     var temperatureState by remember(currentModelSettings.temperature) {
         mutableFloatStateOf(currentModelSettings.temperature)
     }
@@ -122,9 +130,6 @@ fun SettingsDialog(
     }
     var topPState by remember(currentModelSettings.topP) {
         mutableFloatStateOf(currentModelSettings.topP)
-    }
-    var autoShowDialogState by remember(currentModelSettings.autoShowStreamingDialog) {
-        mutableStateOf(currentModelSettings.autoShowStreamingDialog)
     }
     var modelDropdownExpanded by remember { mutableStateOf(false) }
 
@@ -243,6 +248,36 @@ fun SettingsDialog(
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
+                    // 消息文本可选设置
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { isTextSelectableState = !isTextSelectableState }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            "启用消息文本选择/复制",
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Switch(
+                            checked = isTextSelectableState,
+                            onCheckedChange = { isTextSelectableState = it },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = MaterialTheme.colorScheme.primary,
+                                checkedTrackColor = MaterialTheme.colorScheme.primaryContainer,
+                                uncheckedThumbColor = MaterialTheme.colorScheme.outline,
+                                uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+                            )
+                        )
+                    }
+                    Text(
+                        if (isTextSelectableState) "可以长按选择和复制消息气泡中的文本。" else "消息气泡中的文本不可选。",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
                 }
 
                 // 高级模型参数设置
@@ -330,7 +365,8 @@ fun SettingsDialog(
                     temperature = temperatureState,
                     frequencyPenalty = frequencyPenaltyState,
                     autoShowStreamingDialog = autoShowDialogState,
-                    topP = topPState
+                    topP = topPState,
+                    isTextSelectableInBubble = isTextSelectableState
                 )
                 if (isGlobalSettingsMode) {
                     onSaveGlobalDefaults(

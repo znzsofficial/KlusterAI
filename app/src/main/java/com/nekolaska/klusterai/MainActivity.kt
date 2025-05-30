@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Menu
@@ -53,6 +54,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import com.nekolaska.klusterai.ui.components.EditMessageDialog
 import com.nekolaska.klusterai.ui.components.InputRow
 import com.nekolaska.klusterai.ui.components.SettingsDialog
 import com.nekolaska.klusterai.ui.theme.KlusterAITheme
@@ -389,6 +391,7 @@ fun ConfirmActionDialog(
 @Composable
 fun ChatScreen() {
     val context = LocalContext.current
+    val clipboard = LocalClipboard.current
     val coroutineScope = rememberCoroutineScope()
 
     // --- 全局状态 ---
@@ -423,7 +426,6 @@ fun ChatScreen() {
     var userInput by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
-    val clipboard = LocalClipboard.current
 
     var showSettingsDialog by remember { mutableStateOf(false) }
     var showActionMenuDialog by remember { mutableStateOf(false) }
@@ -432,6 +434,10 @@ fun ChatScreen() {
     val streamingContent = remember { mutableStateOf("") }
     var showSaveSessionDialog by remember { mutableStateOf(false) }
     var showSessionListDialog by remember { mutableStateOf(false) }
+
+    // 编辑消息对话框
+    var messageToEditState by remember { mutableStateOf<MessageData?>(null) }
+    var showEditMessageDialog by remember { mutableStateOf(false) }
 
     // 用于通用确认对话框的状态
     data class ConfirmDialogState(val title: String, val text: String, val onConfirm: () -> Unit)
@@ -638,7 +644,6 @@ fun ChatScreen() {
         errorMessage = null
         isLoading = true
         streamingContent.value = ""
-        //showStreamingDialog = true
         // 根据设置决定是否立即显示流式对话框
         showStreamingDialog = activeModelSettings.autoShowStreamingDialog
 
@@ -817,10 +822,14 @@ fun ChatScreen() {
                 reverseLayout = false // 正常顺序
             ) {
                 items(conversationHistory, key = { it.id }) { message ->
-                    MessageBubble(message = message, onLongClick = { msg ->
-                        messageForAction = msg
-                        showActionMenuDialog = true
-                    })
+                    MessageBubble(
+                        message = message,
+                        isContentSelectable = activeModelSettings.isTextSelectableInBubble,
+                        onLongClick = { msg ->
+                            messageForAction = msg
+                            showActionMenuDialog = true
+                        },
+                    )
                     Spacer(modifier = Modifier.height(8.dp))
                 }
             }
@@ -976,10 +985,41 @@ fun ChatScreen() {
                     }
                 }
                 showActionMenuDialog = false; messageForAction = null
+            },
+            onEdit = { msgToEdit -> // 处理编辑请求
+                messageToEditState = msgToEdit
+                showEditMessageDialog = true
+                showActionMenuDialog = false // 关闭操作菜单
+                // messageForAction 设为 null 已在 onDismiss 中处理 (如果 MessageActionDialog 自己的 onDismiss 调用)
+                // 但在这里也设置一下确保安全
+                messageForAction = null
             }
         )
     }
 
+    // 编辑消息对话框
+    if (showEditMessageDialog && messageToEditState != null) {
+        EditMessageDialog(
+            initialContent = messageToEditState!!.content,
+            onSave = { newContent ->
+                val originalMessage = messageToEditState!!
+                val editedMessage = originalMessage.copy(content = newContent) // 创建副本并修改内容
+
+                val index = conversationHistory.indexOfFirst { it.id == originalMessage.id }
+                if (index != -1) {
+                    conversationHistory[index] = editedMessage
+                    markAsModified()
+                    Toast.makeText(context, "消息已更新", Toast.LENGTH_SHORT).show()
+                }
+                showEditMessageDialog = false
+                messageToEditState = null
+            },
+            onDismiss = {
+                showEditMessageDialog = false
+                messageToEditState = null
+            }
+        )
+    }
     if (showStreamingDialog && isLoading) {
         StreamingResponseDialog(
             content = streamingContent.value,
@@ -1008,7 +1048,10 @@ fun updateSystemMessageInHistory(history: MutableList<MessageData>, systemPrompt
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun MessageBubble(message: MessageData, onLongClick: (MessageData) -> Unit) {
+fun MessageBubble(
+    message: MessageData, onLongClick: (MessageData) -> Unit,
+    isContentSelectable: Boolean
+) {
     val alignment = if (message.role == "user") Alignment.End else Alignment.Start
     val containerColor = when (message.role) {
         "user" -> MaterialTheme.colorScheme.primaryContainer
@@ -1042,10 +1085,6 @@ fun MessageBubble(message: MessageData, onLongClick: (MessageData) -> Unit) {
         // 使用 containerWidthDp 进行布局计算
         val maxWidth = remember(containerWidthDp) { containerWidthDp * 0.8f }
 
-        //        val configuration = LocalConfiguration.current
-        //        val maxWidth =
-        //            remember(configuration.screenWidthDp) { configuration.screenWidthDp.dp * 0.85f } // 稍微增加宽度
-
         Surface(
             modifier = Modifier
                 .widthIn(max = maxWidth)
@@ -1072,7 +1111,7 @@ fun MessageBubble(message: MessageData, onLongClick: (MessageData) -> Unit) {
 
                 // 主要内容
                 MarkdownText(
-                    isTextSelectable = true,
+                    isTextSelectable = isContentSelectable,
                     markdown = message.content,
                     linkColor = MaterialTheme.colorScheme.primary,
                     style = MaterialTheme.typography.bodyLarge.copy(
@@ -1137,7 +1176,8 @@ fun MessageActionDialog(
     onDismiss: () -> Unit,
     onCopy: (MessageData) -> Unit,
     onDelete: (MessageData) -> Unit,
-    onRegenerate: (MessageData) -> Unit // 新增重新生成回调
+    onRegenerate: (MessageData) -> Unit, // 重新生成回调
+    onEdit: (MessageData) -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1184,6 +1224,22 @@ fun MessageActionDialog(
                     Text("复制消息")
                 }
                 Spacer(Modifier.height(4.dp))
+
+                // 编辑按钮 (可以根据角色决定是否显示，例如不允许编辑系统消息)
+                if (message.role == "user" || message.role == "assistant") {
+                    TextButton(
+                        onClick = { onEdit(message); /* onDismiss() is handled in ChatScreen */ },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            Icons.Filled.Edit,
+                            contentDescription = "编辑",
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                        Text("编辑消息")
+                    }
+                    Spacer(Modifier.height(4.dp))
+                }
 
                 // 重新回复按钮 (仅对 user 和 assistant 消息有意义，但为简化，都显示)
                 // 你可以根据 message.role 决定是否显示此按钮
