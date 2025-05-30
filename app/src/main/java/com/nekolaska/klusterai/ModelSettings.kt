@@ -5,7 +5,8 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class ModelSettings(
     val temperature: Float = 0.7f,
-    val frequencyPenalty: Float = 0.0f
+    val frequencyPenalty: Float = 0.0f,
+    val autoShowStreamingDialog: Boolean = true
     // 未来可以添加更多参数:
     // val topP: Float = 1.0f,
 ) {

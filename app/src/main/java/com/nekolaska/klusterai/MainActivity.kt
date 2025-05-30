@@ -1,5 +1,6 @@
 package com.nekolaska.klusterai
 
+import android.content.ClipData
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -38,15 +39,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
@@ -55,6 +54,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.nekolaska.klusterai.ui.components.InputRow
+import com.nekolaska.klusterai.ui.components.SettingsDialog
 import com.nekolaska.klusterai.ui.theme.KlusterAITheme
 import dev.jeziellago.compose.markdowntext.MarkdownText
 import kotlinx.coroutines.Dispatchers
@@ -413,203 +413,7 @@ fun ConfirmActionDialog(
 //    )
 //}
 
-// --- SettingsDialog ---
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun SettingsDialog(
-    isGlobalSettingsMode: Boolean, // true 表示修改全局默认，false 表示修改当前会话特定设置
-    currentApiKey: String, // 仅在全局模式下可编辑
-    currentSelectedModelApiName: String,
-    currentSystemPrompt: String,
-    currentModelSettings: ModelSettings, // 传入 ModelSettings 对象
-    onSaveGlobalDefaults: (apiKey: String, modelApiName: String, systemPrompt: String, modelSettings: ModelSettings) -> Unit,
-    onSaveSessionSpecific: (modelApiName: String, systemPrompt: String, modelSettings: ModelSettings) -> Unit,
-    onDismiss: () -> Unit
-) {
-    // 如果是会话特定设置，API Key 不应在此处修改，因此使用传入的 currentApiKey (通常是全局的)
-    var apiKeyInput by remember(currentApiKey, isGlobalSettingsMode) {
-        mutableStateOf(if (isGlobalSettingsMode) currentApiKey else "") // API Key 输入框仅全局模式可见和可编辑
-    }
-    var selectedModelApiNameState by remember(currentSelectedModelApiName) {
-        mutableStateOf(
-            currentSelectedModelApiName
-        )
-    }
-    var systemPromptInput by remember(currentSystemPrompt) { mutableStateOf(currentSystemPrompt) }
-    // 将 ModelSettings 的各个字段解构到可变状态，以便 Slider 可以绑定
-    var temperatureState by remember(currentModelSettings.temperature) {
-        mutableFloatStateOf(
-            currentModelSettings.temperature
-        )
-    }
-    var frequencyPenaltyState by remember(currentModelSettings.frequencyPenalty) {
-        mutableFloatStateOf(
-            currentModelSettings.frequencyPenalty
-        )
-    }
-
-    var modelDropdownExpanded by remember { mutableStateOf(false) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (isGlobalSettingsMode) "全局默认设置" else "当前会话设置") },
-        text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                if (isGlobalSettingsMode) {
-                    OutlinedTextField(
-                        value = apiKeyInput,
-                        onValueChange = { if (it.length <= 100) apiKeyInput = it },
-                        label = { Text("API 密钥 (全局)") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                        singleLine = true,
-                        placeholder = { Text("在此输入您的 API Key") }
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                Text("选择模型:", style = MaterialTheme.typography.titleSmall)
-                ExposedDropdownMenuBox(
-                    expanded = modelDropdownExpanded,
-                    onExpandedChange = { modelDropdownExpanded = !modelDropdownExpanded },
-                    modifier = Modifier.padding(vertical = 4.dp)
-                ) {
-                    OutlinedTextField(
-                        value = availableModels.find { it.apiName == selectedModelApiNameState }?.displayName
-                            ?: "选择模型",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("当前模型") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelDropdownExpanded) },
-                        modifier = Modifier
-                            .menuAnchor(MenuAnchorType.PrimaryNotEditable) //  设置只读
-                            .fillMaxWidth(),
-                        colors = OutlinedTextFieldDefaults.colors()
-                    )
-                    ExposedDropdownMenu(
-                        expanded = modelDropdownExpanded,
-                        onDismissRequest = { modelDropdownExpanded = false }
-                    ) {
-                        availableModels.forEach { model ->
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        model.displayName,
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-                                },
-                                onClick = {
-                                    selectedModelApiNameState = model.apiName
-                                    modelDropdownExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-
-                OutlinedTextField(
-                    value = systemPromptInput,
-                    onValueChange = { if (it.length <= 6000) systemPromptInput = it },
-                    label = { Text("系统提示内容") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 100.dp, max = 250.dp)
-                        .padding(vertical = 8.dp),
-                    minLines = 3,
-                    maxLines = 10,
-                    placeholder = { Text(if (isGlobalSettingsMode) "输入全局默认系统提示..." else "输入当前会话的系统提示...") }
-                )
-
-                // --- 温度设置 ---
-                Text(
-                    "模型温度 (随机性): ${
-                        String.format(
-                            Locale.US,
-                            "%.1f",
-                            temperatureState
-                        )
-                    }", // 显示当前温度值
-                    style = MaterialTheme.typography.titleSmall
-                )
-                Slider(
-                    value = temperatureState,
-                    onValueChange = {
-                        temperatureState = it // 更新滑块状态
-                    },
-                    valueRange = 0.0f..2.0f, // 范围 0.0 到 1.0 或 2.0
-                    steps = 39, // (2.0 - 0.0) 每隔 0.05
-                    modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
-                )
-                Text(
-                    "较低值使输出更具确定性，较高值更具创造性。",
-                    style = MaterialTheme.typography.bodySmall
-                )
-
-                // 频率惩罚设置
-                Text("频率惩罚: ${String.format(Locale.US, "%.1f", frequencyPenaltyState)}")
-                Slider(
-                    value = frequencyPenaltyState,
-                    onValueChange = { frequencyPenaltyState = it },
-                    valueRange = -2.0f..2.0f,
-                    steps = 39, // (-2.0 - 2.0) 每隔 0.1
-                    modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
-                )
-                Text(
-                    "较低值使输出更加一致，较高值尽量不使用重复的词语。",
-                    style = MaterialTheme.typography.bodySmall
-                )
-
-                if (!isGlobalSettingsMode) {
-                    Text(
-                        "注意：此处的更改将应用于当前打开的会话，并在您手动保存会话后持久化。",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontStyle = FontStyle.Italic
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                // 从状态创建新的 ModelSettings 对象
-                val updatedModelSettings = ModelSettings(
-                    temperature = temperatureState,
-                    frequencyPenalty = frequencyPenaltyState
-                    // topP = topPState // 示例
-                )
-                if (isGlobalSettingsMode) {
-                    onSaveGlobalDefaults(
-                        apiKeyInput,
-                        selectedModelApiNameState,
-                        systemPromptInput,
-                        updatedModelSettings
-                    )
-                } else {
-                    onSaveSessionSpecific(
-                        selectedModelApiNameState,
-                        systemPromptInput,
-                        updatedModelSettings
-                    )
-                }
-                onDismiss() // 关闭对话框
-            }) {
-                Text("保存")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
-            }
-        },
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = MaterialTheme.shapes.large
-    )
-}
-
-
 // --- ChatScreen ---
-@Suppress("DEPRECATION")
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ChatScreen() {
@@ -647,8 +451,8 @@ fun ChatScreen() {
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var userInput by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
-    // 这个 Deprecated 不会改
-    val clipboardManager = LocalClipboardManager.current
+
+    val clipboard = LocalClipboard.current
 
     var showSettingsDialog by remember { mutableStateOf(false) }
     var showActionMenuDialog by remember { mutableStateOf(false) }
@@ -863,7 +667,9 @@ fun ChatScreen() {
         errorMessage = null
         isLoading = true
         streamingContent.value = ""
-        showStreamingDialog = true
+        //showStreamingDialog = true
+        // 根据设置决定是否立即显示流式对话框
+        showStreamingDialog = activeModelSettings.autoShowStreamingDialog
 
         coroutineScope.launch {
             var fullResponse: String?
@@ -1150,7 +956,12 @@ fun ChatScreen() {
                 } else {
                     msgToCopy.content
                 }
-                clipboardManager.setText(AnnotatedString(textToCopy))
+                clipboard.nativeClipboard.setPrimaryClip(
+                    ClipData.newPlainText(
+                        msgToCopy.role,
+                        textToCopy
+                    )
+                )
                 Toast.makeText(context, "已复制到剪贴板", Toast.LENGTH_SHORT).show()
                 showActionMenuDialog = false; messageForAction = null
             },
@@ -1598,89 +1409,3 @@ suspend fun callLLMApi(
         throw IOException("处理API响应时发生错误: ${e.message}", e) // 包装成IOException
     }
 }
-
-
-// --- 预览 ---
-//@Preview(showBackground = true)
-//@Composable
-//fun DefaultPreview() {
-//    MaterialTheme {
-//        ChatScreen()
-//    }
-//}
-//
-//@Preview(showBackground = true)
-//@Composable
-//fun MessageBubbleUserPreview() {
-//    MaterialTheme {
-//        MessageBubble(MessageData("user", "你好，甘雨！")) {}
-//    }
-//}
-//
-//@Preview(showBackground = true)
-//@Composable
-//fun MessageBubbleAssistantWithThinkPreview() {
-//    var expanded by remember { mutableStateOf(false) }
-//    MaterialTheme {
-//        Column {
-//            MessageBubble(
-//                MessageData(
-//                    "assistant",
-//                    "{甘雨眨了眨漂亮的紫色眼睛} “你好，冰尘。”",
-//                    "用户打招呼了。我应该也问候他们。这是一个比较长的思考过程，用于测试多行显示和滚动效果。思考内容可以帮助理解AI的决策过程。"
-//                )
-//            ) {}
-//            Spacer(modifier = Modifier.height(10.dp))
-//            MessageBubble( // 另一个没有思考内容的消息
-//                MessageData(
-//                    "user",
-//                    "今天天气怎么样？"
-//                )
-//            ) {}
-//        }
-//    }
-//}
-//
-//@Preview
-//@Composable
-//fun SettingsDialogPreview() {
-//    MaterialTheme {
-//        SettingsDialog(
-//            currentApiKey = "test-key-123",
-//            currentSelectedModelApiName = availableModels.first().apiName,
-//            currentSystemPrompt = "你是一个乐于助人的AI助手。",
-//            onSave = { _, _, _ -> },
-//            onDismiss = {}
-//        )
-//    }
-//}
-//
-//
-//@Preview
-//@Composable
-//fun MessageActionDialogPreview() {
-//    MaterialTheme {
-//        MessageActionDialog(
-//            message = MessageData(
-//                "assistant",
-//                "这是一条可以操作的消息内容，可能有点长，看看会不会溢出或者正确显示省略号。",
-//                "这是思考内容，也可能很长。"
-//            ),
-//            onDismiss = {},
-//            onCopy = {},
-//            onDelete = {},
-//            onRegenerate = {}
-//        )
-//    }
-//}
-//
-//@Preview
-//@Composable
-//fun StreamingResponseDialogPreview() {
-//    MaterialTheme {
-//        StreamingResponseDialog(
-//            content = "这是第一段回复。\n这是第二段回复，内容还在不断增加中...\n又来了一段新的内容，看看滚动条是否正常工作。",
-//            onDismissRequest = {}
-//        )
-//    }
-//}

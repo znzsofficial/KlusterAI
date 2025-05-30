@@ -18,29 +18,31 @@ object SharedPreferencesUtils {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
 
-    fun saveApiKey(context: Context, apiKey: String) {
-        getPreferences(context).edit { putString(KEY_API_KEY, apiKey) }
+    private fun save(context: Context, key: String, value: String) {
+        getPreferences(context).edit(true) {
+            putString(key, value)
+        }
     }
 
-    fun loadApiKey(context: Context, defaultValue: String): String {
-        return getPreferences(context).getString(KEY_API_KEY, defaultValue) ?: defaultValue
+    private fun load(context: Context, key: String, defaultValue: String): String {
+        return getPreferences(context).getString(key, defaultValue) ?: defaultValue
     }
 
-    fun saveSelectedModel(context: Context, modelApiName: String) {
-        getPreferences(context).edit { putString(KEY_SELECTED_MODEL, modelApiName) }
-    }
+    fun saveApiKey(context: Context, apiKey: String) = save(context, KEY_API_KEY, apiKey)
+    fun loadApiKey(context: Context, defaultValue: String): String =
+        load(context, KEY_API_KEY, defaultValue)
 
-    fun loadSelectedModel(context: Context, defaultValue: String): String {
-        return getPreferences(context).getString(KEY_SELECTED_MODEL, defaultValue) ?: defaultValue
-    }
+    fun saveSelectedModel(context: Context, modelApiName: String) =
+        save(context, KEY_SELECTED_MODEL, modelApiName)
 
-    fun saveSystemPrompt(context: Context, systemPrompt: String) {
-        getPreferences(context).edit { putString(KEY_SYSTEM_PROMPT, systemPrompt) }
-    }
+    fun loadSelectedModel(context: Context, defaultValue: String) =
+        load(context, KEY_SELECTED_MODEL, defaultValue)
 
-    fun loadSystemPrompt(context: Context, defaultValue: String): String {
-        return getPreferences(context).getString(KEY_SYSTEM_PROMPT, defaultValue) ?: defaultValue
-    }
+    fun saveSystemPrompt(context: Context, systemPrompt: String) =
+        save(context, KEY_SYSTEM_PROMPT, systemPrompt)
+
+    fun loadSystemPrompt(context: Context, defaultValue: String) =
+        load(context, KEY_SYSTEM_PROMPT, defaultValue)
 
     fun saveGlobalModelSettings(context: Context, settings: ModelSettings) {
         val jsonString = json.encodeToString(settings)
