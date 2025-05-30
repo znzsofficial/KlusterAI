@@ -4,13 +4,15 @@ package com.nekolaska.klusterai
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
+import kotlinx.serialization.json.Json
 
 object SharedPreferencesUtils {
     private const val PREFS_NAME = "klusterai_prefs"
     private const val KEY_API_KEY = "api_key"
     private const val KEY_SELECTED_MODEL = "selected_model_api_name"
     private const val KEY_SYSTEM_PROMPT = "system_prompt"
-    private const val KEY_TEMPERATURE = "temperature"             // 全局默认温度
+    private const val KEY_GLOBAL_MODEL_SETTINGS = "global_model_settings"
+    private val json = Json { ignoreUnknownKeys = true; isLenient = true } // 需要 Json 实例
 
     private fun getPreferences(context: Context): SharedPreferences {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -40,12 +42,22 @@ object SharedPreferencesUtils {
         return getPreferences(context).getString(KEY_SYSTEM_PROMPT, defaultValue) ?: defaultValue
     }
 
-    // Temperature (Global Default)
-    fun saveTemperature(context: Context, temperature: Float) {
-        getPreferences(context).edit { putFloat(KEY_TEMPERATURE, temperature) }
+    fun saveGlobalModelSettings(context: Context, settings: ModelSettings) {
+        val jsonString = json.encodeToString(settings)
+        getPreferences(context).edit { putString(KEY_GLOBAL_MODEL_SETTINGS, jsonString) }
     }
 
-    fun loadTemperature(context: Context, defaultValue: Float): Float {
-        return getPreferences(context).getFloat(KEY_TEMPERATURE, defaultValue)
+    fun loadGlobalModelSettings(context: Context): ModelSettings {
+        val jsonString = getPreferences(context).getString(KEY_GLOBAL_MODEL_SETTINGS, null)
+        return if (jsonString != null) {
+            try {
+                json.decodeFromString<ModelSettings>(jsonString)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                ModelSettings.DEFAULT // 解析失败则返回默认值
+            }
+        } else {
+            ModelSettings.DEFAULT // 未找到也返回默认值
+        }
     }
 }
