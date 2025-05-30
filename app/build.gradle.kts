@@ -1,3 +1,7 @@
+import com.android.build.gradle.internal.api.BaseVariantOutputImpl
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -9,12 +13,21 @@ android {
     namespace = "com.nekolaska.klusterai"
     compileSdk = 36
 
+    val versionPropsFile = file("version.properties")
+    val versionProps = Properties()
+    versionProps.load(FileInputStream(versionPropsFile))
+    val verCode = Integer.parseInt(versionProps["VERSION_CODE"] as String)
+    if (":app:assembleRelease" in  gradle.startParameter.taskNames) {
+        versionProps["VERSION_CODE"] = (verCode + 1).toString()
+        versionProps.store(versionPropsFile.writer(), null)
+    }
+
     defaultConfig {
         applicationId = "com.nekolaska.klusterai"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = verCode
+        versionName = "0.$verCode"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -37,6 +50,14 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+    applicationVariants.all {
+        outputs.all {
+            val apkName = "KlusterAI_${defaultConfig.versionName}.APK"
+            //val minSdk = project.extensions.getByType(BaseAppModuleExtension::class.java).defaultConfig.minSdk
+            //val abi = filters.find { it.filterType == "ABI" }?.identifier ?: "all"
+            (this as BaseVariantOutputImpl).outputFileName = apkName
+        }
     }
 }
 
