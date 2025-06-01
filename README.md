@@ -41,7 +41,7 @@
 
 1.  克隆本仓库: `git clone https://github.com/你的用户名/你的仓库名.git`
 2.  使用 Android Studio 打开项目。
-3.  在 `MainActivity.kt` 中，找到 `DEFAULT_API_KEY_FALLBACK` 常量，并替换为你自己的 Kluster.ai API Key，或者在应用首次运行时通过设置对话框输入。
+3.  在 `DefaultConfig.kt` 中，找到 `DEFAULT_API_KEY_FALLBACK` 常量，并替换为你自己的 Kluster.ai API Key，或者在应用首次运行时通过设置对话框输入。
     ```kotlin
     // const val DEFAULT_API_KEY_FALLBACK = "YOUR_DEFAULT_API_KEY_HERE" // 替换为你的 Key
     ```
@@ -54,7 +54,7 @@
 *   [x] 支持 Markdown 渲染回复内容。
 *   [ ] 优化长聊天记录的加载性能。
 *   [ ] 添加更多自定义主题选项。
-*   [ ] 完善错误提示和用户引导。
+*   [ ] 支持自定义兼容 OpenAI 的 API 。
 
 ## 贡献
 
