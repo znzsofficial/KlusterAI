@@ -6,45 +6,30 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
@@ -54,11 +39,17 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.nekolaska.klusterai.ui.components.EditMessageDialog
 import com.nekolaska.klusterai.ui.components.InputRow
+import com.nekolaska.klusterai.ui.components.MessageActionDialog
+import com.nekolaska.klusterai.ui.components.MessageBubble
 import com.nekolaska.klusterai.ui.components.SettingsDialog
+import com.nekolaska.klusterai.ui.components.StreamingResponseDialog
 import com.nekolaska.klusterai.ui.theme.KlusterAITheme
-import dev.jeziellago.compose.markdowntext.MarkdownText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -68,11 +59,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.TimeZone
-import java.util.concurrent.TimeUnit
 
 // --- 消息数据类 ---
 data class MessageData(
@@ -81,52 +67,6 @@ data class MessageData(
     val thinkContent: String? = null,
     val id: Long = System.nanoTime() // 使用纳秒保证ID的独特性
 )
-
-// --- OkHttp 客户端 ---
-val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-    .connectTimeout(300, TimeUnit.SECONDS)
-    .readTimeout(300, TimeUnit.SECONDS)
-    .writeTimeout(300, TimeUnit.SECONDS)
-    .build()
-
-// --- 辅助函数 ---
-fun extractContent(input: String): String? {
-    return try {
-        val lines = input.lines().filter { it.isNotBlank() }
-        for (line in lines) {
-            try {
-                val jsonObject = JSONObject(line)
-                if (jsonObject.has("choices")) {
-                    val choicesArray = jsonObject.getJSONArray("choices")
-                    if (choicesArray.length() > 0) {
-                        val firstChoice = choicesArray.getJSONObject(0)
-                        if (firstChoice.has("message")) {
-                            return firstChoice.getJSONObject("message").getString("content")
-                        } else if (firstChoice.has("delta") && firstChoice.getJSONObject("delta")
-                                .has("content")
-                        ) {
-                            return firstChoice.getJSONObject("delta").getString("content")
-                        }
-                    }
-                }
-            } catch (_: Exception) { /* 忽略单行解析错误 */
-            }
-        }
-        null
-    } catch (e: Exception) {
-        println("提取内容时出错: ${e.message}")
-        null
-    }
-}
-
-fun extractThinkSection(input: String): Pair<String?, String> {
-    val regex = Regex("<think>(.*?)</think>", RegexOption.DOT_MATCHES_ALL)
-    val match = regex.find(input)
-    val thinkPart = match?.groupValues?.get(1)?.trim()
-    val remainingPart = regex.replace(input, "").trim()
-    return Pair(thinkPart, remainingPart)
-}
-
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -140,7 +80,6 @@ class MainActivity : ComponentActivity() {
 }
 
 // Session 相关
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SaveSessionDialog(
@@ -212,7 +151,6 @@ fun SessionListDialog(
     onDismiss: () -> Unit
 ) {
     var sessionToRename by remember { mutableStateOf<SessionMeta?>(null) }
-    //var newTitleInput by remember { mutableStateOf("") }
 
     Dialog(onDismissRequest = {
         sessionToRename = null // 关闭重命名输入时重置
@@ -243,7 +181,6 @@ fun SessionListDialog(
                                 onClick = { onSessionSelected(session.id) },
                                 onDelete = { onDeleteSession(session.id) },
                                 onRename = {
-                                    //newTitleInput = session.title
                                     sessionToRename = session
                                 }
                             )
@@ -363,13 +300,6 @@ fun SessionListItem(
     }
 }
 
-fun formatTimestamp(timestamp: Long): String {
-    val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-    sdf.timeZone = TimeZone.getDefault() // 使用设备本地时区
-    return sdf.format(Date(timestamp))
-}
-
-
 @Composable
 fun ConfirmActionDialog(
     title: String,
@@ -392,9 +322,14 @@ fun ConfirmActionDialog(
 fun ChatScreen() {
     val context = LocalContext.current
     val clipboard = LocalClipboard.current
+    val lifecycleOwner: LifecycleOwner = LocalLifecycleOwner.current // 获取生命周期所有者
     val coroutineScope = rememberCoroutineScope()
 
     // --- 全局状态 ---
+    var autoSaveOnSwitchSessionGlobalPref by remember { //全局自动保存偏好
+        mutableStateOf(SharedPreferencesUtils.loadAutoSaveOnSwitchPreference(context))
+    }
+
     var globalApiKey by remember {
         mutableStateOf(SharedPreferencesUtils.loadApiKey(context, DEFAULT_API_KEY_FALLBACK))
     }
@@ -486,60 +421,8 @@ fun ChatScreen() {
         }
     }
 
-    fun prepareNewChat() {
-        currentSessionId = null
-        currentSessionTitleInput =
-            TextFieldValue(ChatSessionRepository.suggestTitleFromMessages(emptyList())) // 建议一个新标题
-        conversationHistory.clear()
-        updateActiveSessionSettings(null) // 使用全局默认
-        userInput = ""
-        errorMessage = null
-        isLoading = false
-        markAsModified(false) // 新聊天初始未修改
-        coroutineScope.launch { if (conversationHistory.isNotEmpty()) listState.scrollToItem(0) }
-    }
-
-    fun startNewChatConfirmed() {
-        prepareNewChat()
-        Toast.makeText(context, "新聊天已开始", Toast.LENGTH_SHORT).show()
-    }
-
-    fun tryStartingNewChat() {
-        if (isCurrentChatModified) {
-            confirmDialogState = ConfirmDialogState(
-                title = "未保存的更改",
-                text = "当前聊天有未保存的更改。开始新聊天将丢失这些更改。确定要继续吗？",
-                onConfirm = { startNewChatConfirmed() }
-            )
-        } else {
-            startNewChatConfirmed()
-        }
-    }
-
-    fun tryLoadingSession(sessionId: String) {
-        if (currentSessionId == sessionId) return // 已经是当前会话
-
-        val action = {
-            loadSession(sessionId)
-            showSessionListDialog = false // 关闭列表
-        }
-        if (isCurrentChatModified) {
-            confirmDialogState = ConfirmDialogState(
-                title = "未保存的更改",
-                text = "切换会话前是否保存当前聊天？若不保存，更改将丢失。",
-                onConfirm = {
-                    // 这里可以先触发保存当前会话的逻辑，或者直接切换
-                    // 为简单起见，我们先直接切换，丢失更改
-                    action()
-                }
-            )
-        } else {
-            action()
-        }
-    }
-
-
-    fun handleSaveSession(title: String) {
+    fun handleSaveCurrentChatAndThen(title: String, andThenAction: (() -> Unit)? = null) {
+        // ... (原 handleSaveSession 逻辑)
         val sessionIdToSave = currentSessionId ?: ChatSessionRepository.generateNewSessionId()
         val newMeta = SessionMeta(
             id = sessionIdToSave,
@@ -547,7 +430,7 @@ fun ChatScreen() {
             lastModifiedTimestamp = System.currentTimeMillis(),
             systemPrompt = activeSystemPrompt,
             modelApiName = activeModelApiName,
-            modelSettings = activeModelSettings // 保存当前激活的模型设置
+            modelSettings = activeModelSettings
         )
         ChatSessionRepository.addOrUpdateSessionMeta(context, newMeta)
         ChatSessionRepository.saveMessagesForSession(
@@ -568,8 +451,74 @@ fun ChatScreen() {
         currentSessionId = sessionIdToSave // 标记当前聊天为已保存的这个ID
         currentSessionTitleInput = TextFieldValue(title) // 更新UI上的标题
         markAsModified(false)
-        Toast.makeText(context, "会话已保存: $title", Toast.LENGTH_SHORT).show()
-        showSaveSessionDialog = false
+        Toast.makeText(context, "会话已自动保存: $title", Toast.LENGTH_SHORT).show()
+        showSaveSessionDialog = false // 关闭可能的保存对话框
+        andThenAction?.invoke() // 执行后续操作
+    }
+
+    fun prepareNewChat() {
+        currentSessionId = null
+        currentSessionTitleInput =
+            TextFieldValue(ChatSessionRepository.suggestTitleFromMessages(emptyList())) // 建议一个新标题
+        conversationHistory.clear()
+        updateActiveSessionSettings(null) // 使用全局默认
+        userInput = ""
+        errorMessage = null
+        isLoading = false
+        markAsModified(false) // 新聊天初始未修改
+        coroutineScope.launch { if (conversationHistory.isNotEmpty()) listState.scrollToItem(0) }
+    }
+
+    fun startNewChatConfirmed() {
+        prepareNewChat()
+        Toast.makeText(context, "新聊天已开始", Toast.LENGTH_SHORT).show()
+    }
+
+    fun tryStartingNewChat() {
+        val action = { startNewChatConfirmed() }
+
+        if (isCurrentChatModified) {
+            if (autoSaveOnSwitchSessionGlobalPref) { // 检查自动保存偏好
+                val suggestedTitle = currentSessionTitleInput.text.ifBlank {
+                    ChatSessionRepository.suggestTitleFromMessages(conversationHistory.toList())
+                }
+                handleSaveCurrentChatAndThen(suggestedTitle, action) // 保存并执行后续操作
+            } else {
+                confirmDialogState = ConfirmDialogState(
+                    title = "未保存的更改",
+                    text = "当前聊天有未保存的更改。开始新聊天将丢失这些更改。确定要继续吗？\n（您可以在设置中开启切换时自动保存）",
+                    onConfirm = action
+                )
+            }
+        } else {
+            action()
+        }
+    }
+
+    fun tryLoadingSession(sessionId: String) {
+        if (currentSessionId == sessionId) return
+
+        val action = {
+            loadSession(sessionId)
+            showSessionListDialog = false
+        }
+
+        if (isCurrentChatModified) {
+            if (autoSaveOnSwitchSessionGlobalPref) { // 检查自动保存偏好
+                val suggestedTitle = currentSessionTitleInput.text.ifBlank {
+                    ChatSessionRepository.suggestTitleFromMessages(conversationHistory.toList())
+                }
+                handleSaveCurrentChatAndThen(suggestedTitle, action) // 保存并执行后续操作
+            } else {
+                confirmDialogState = ConfirmDialogState(
+                    title = "未保存的更改",
+                    text = "切换会话前是否保存当前聊天？若不保存，更改将丢失。\n（您可以在设置中开启切换时自动保存）",
+                    onConfirm = action // 用户确认丢失更改
+                )
+            }
+        } else {
+            action()
+        }
     }
 
     fun handleDeleteSession(sessionId: String) {
@@ -618,6 +567,47 @@ fun ChatScreen() {
         }
     }
 
+    // --- 生命周期事件处理：退出时自动保存 ---
+    DisposableEffect(
+        lifecycleOwner,
+        isCurrentChatModified,
+        autoSaveOnSwitchSessionGlobalPref,
+        currentSessionId,
+        currentSessionTitleInput.text
+    ) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) { // 或者 ON_PAUSE，但 ON_STOP 更接近“退出”
+                if (isCurrentChatModified && autoSaveOnSwitchSessionGlobalPref) {
+                    // 确定保存标题
+                    val titleToSaveOnExit = if (currentSessionId != null) {
+                        currentSessionTitleInput.text // 如果是已保存的会话，使用当前标题
+                    } else {
+                        // 如果是新聊天，尝试使用用户可能在标题输入框中输入的值，否则建议一个
+                        currentSessionTitleInput.text.ifBlank {
+                            ChatSessionRepository.suggestTitleFromMessages(conversationHistory.toList())
+                        }
+                    }
+                    // 确保标题不为空
+                    val finalTitle = titleToSaveOnExit.ifBlank {
+                        ChatSessionRepository.suggestTitleFromMessages(conversationHistory.toList())
+                    }
+
+                    // 调用保存逻辑，但不进行后续操作 (andThenAction = null)
+                    // 注意：这里的 context 可能需要从外部传入，或者确保 handleSaveCurrentChatAndThen 能正确访问
+                    // 但由于 handleSaveCurrentChatAndThen 已经是 ChatScreen 内部函数，它可以访问 context
+                    handleSaveCurrentChatAndThen(finalTitle, null) // 保存当前状态
+                    //Log.d("ChatScreenLifecycle", "Attempting auto-save on stop.")
+                }
+            }
+        }
+
+        lifecycleOwner.lifecycle.addObserver(observer)
+
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            //Log.d("ChatScreenLifecycle", "Observer removed.")
+        }
+    }
     // --- API 请求 ---
     fun triggerLLMRequest(historyForRequest: List<MessageData>, insertionIndex: Int? = null) {
         if (globalApiKey.isBlank()) {
@@ -695,12 +685,31 @@ fun ChatScreen() {
 
 
     // --- 返回键处理 ---
-    BackHandler(enabled = isCurrentChatModified) {
-        confirmDialogState = ConfirmDialogState(
-            title = "未保存的更改",
-            text = "当前聊天有未保存的更改。确定要退出应用吗？",
-            onConfirm = { (context as? ComponentActivity)?.finish() } // 退出应用
-        )
+    BackHandler(enabled = isCurrentChatModified) { // 仅当有修改时启用
+        if (autoSaveOnSwitchSessionGlobalPref) {
+            val titleToSaveOnBack = currentSessionTitleInput.text.ifBlank {
+                ChatSessionRepository.suggestTitleFromMessages(conversationHistory.toList())
+            }
+            val finalTitle = titleToSaveOnBack.ifBlank {
+                ChatSessionRepository.suggestTitleFromMessages(conversationHistory.toList())
+            }
+            handleSaveCurrentChatAndThen(finalTitle) {
+                // 自动保存后，允许退出或执行其他返回操作
+                //Log.d("ChatScreenBackHandler", "Auto-saved on back press, allowing exit.")
+                // 如果这是应用的最后一个 Activity，可能需要 (context as? ComponentActivity)?.finish()
+                // 如果有导航栈，则是 navController.popBackStack()
+                // 这里我们假设按返回键就是想退出当前屏幕/应用
+                (context as? ComponentActivity)?.finishAffinity() // 关闭应用
+            }
+        } else {
+            confirmDialogState = ConfirmDialogState(
+                title = "未保存的更改",
+                text = "当前聊天有未保存的更改。确定要退出吗？",
+                onConfirm = {
+                    (context as? ComponentActivity)?.finishAffinity() // 确认后退出应用
+                }
+            )
+        }
     }
 
     // --- UI ---
@@ -859,17 +868,22 @@ fun ChatScreen() {
             currentApiKey = globalApiKey,
             currentSelectedModelApiName = activeModelApiName,
             currentSystemPrompt = activeSystemPrompt,
+            currentAutoSaveOnSwitch = autoSaveOnSwitchSessionGlobalPref, // 传递当前的全局偏好
             currentModelSettings = activeModelSettings, // 传递 activeModelSettings
-            onSaveGlobalDefaults = { newApiKey, newModel, newPrompt, newSettings ->
+            onSaveGlobalDefaults = { newAutoSavePref, newApiKey, newModel, newPrompt, newSettings ->
                 globalApiKey = newApiKey
                 globalDefaultModelApiName = newModel
                 globalDefaultSystemPrompt = newPrompt
                 globalDefaultModelSettings = newSettings // 保存新的全局默认模型设置
+                autoSaveOnSwitchSessionGlobalPref = newAutoSavePref // 更新全局偏好状态
 
-                SharedPreferencesUtils.saveApiKey(context, newApiKey)
-                SharedPreferencesUtils.saveSelectedModel(context, newModel)
-                SharedPreferencesUtils.saveSystemPrompt(context, newPrompt)
-                SharedPreferencesUtils.saveGlobalModelSettings(context, newSettings)
+                SharedPreferencesUtils.apply {
+                    saveApiKey(context, newApiKey)
+                    saveSelectedModel(context, newModel)
+                    saveSystemPrompt(context, newPrompt)
+                    saveGlobalModelSettings(context, newSettings)
+                    saveAutoSaveOnSwitchPreference(context, newAutoSavePref) // 保存到 SP
+                }
 
                 if (currentSessionId == null) { // 如果当前是新聊天，立即应用全局更改
                     updateActiveSessionSettings(null)
@@ -894,8 +908,8 @@ fun ChatScreen() {
         SaveSessionDialog(
             initialTitle = currentSessionTitleInput.text, // 使用 currentSessionTitleInput
             onSave = { titleFromDialog ->
-                handleSaveSession(titleFromDialog)
-                // currentSessionTitleInput 更新已在 handleSaveSession 中
+                handleSaveCurrentChatAndThen(titleFromDialog)
+                // currentSessionTitleInput 更新已在 handleSaveCurrentChatAndThen 中
             },
             onDismiss = { showSaveSessionDialog = false }
         )
@@ -1046,299 +1060,6 @@ fun updateSystemMessageInHistory(history: MutableList<MessageData>, systemPrompt
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-fun MessageBubble(
-    message: MessageData, onLongClick: (MessageData) -> Unit,
-    isContentSelectable: Boolean
-) {
-    val alignment = if (message.role == "user") Alignment.End else Alignment.Start
-    val containerColor = when (message.role) {
-        "user" -> MaterialTheme.colorScheme.primaryContainer
-        "assistant" -> MaterialTheme.colorScheme.secondaryContainer
-        "system" -> MaterialTheme.colorScheme.tertiaryContainer
-        else -> MaterialTheme.colorScheme.surfaceVariant
-    }
-    val contentColor = when (message.role) {
-        "user" -> MaterialTheme.colorScheme.onPrimaryContainer
-        "assistant" -> MaterialTheme.colorScheme.onSecondaryContainer
-        "system" -> MaterialTheme.colorScheme.onTertiaryContainer
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    var isThinkExpanded by remember { mutableStateOf(false) } // 控制思考内容展开/折叠
-
-    if (message.role == "system" && message.content.isBlank()) return
-
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = alignment
-    ) {
-        val windowInfo = LocalWindowInfo.current
-        val density = LocalDensity.current
-
-        // containerSize 返回的是像素值，需要转换为 Dp
-        val containerWidthPx = windowInfo.containerSize.width
-        val containerWidthDp = remember(containerWidthPx, density) {
-            with(density) { containerWidthPx.toDp() }
-        }
-
-        // 使用 containerWidthDp 进行布局计算
-        val maxWidth = remember(containerWidthDp) { containerWidthDp * 0.8f }
-
-        Surface(
-            modifier = Modifier
-                .widthIn(max = maxWidth)
-                .clip(MaterialTheme.shapes.medium)
-                .combinedClickable(
-                    onClick = { /* 短按无操作，或未来可用于编辑等 */ },
-                    onLongClick = { onLongClick(message) }
-                ),
-            color = containerColor,
-            shadowElevation = 1.dp
-        ) {
-            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                Text( // 角色名称
-                    text = when (message.role) {
-                        "user" -> "你"
-                        "assistant" -> "助手"
-                        "system" -> "系统提示"
-                        else -> message.role.replaceFirstChar { it.uppercase() }
-                    },
-                    style = MaterialTheme.typography.labelMedium,
-                    color = contentColor.copy(alpha = 0.8f)
-                )
-                Spacer(modifier = Modifier.height(4.dp)) // 角色和内容之间的间距
-
-                // 主要内容
-                MarkdownText(
-                    isTextSelectable = isContentSelectable,
-                    markdown = message.content,
-                    linkColor = MaterialTheme.colorScheme.primary,
-                    style = MaterialTheme.typography.bodyLarge.copy(
-                        color = contentColor,
-                    ),
-                    //style = MaterialTheme.typography.bodyLarge,
-                    //color = contentColor
-                )
-
-                // 思考内容部分
-                if (message.role != "system" && message.thinkContent != null && message.thinkContent.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    TextButton( // 展开/折叠思考内容的按钮
-                        onClick = { isThinkExpanded = !isThinkExpanded },
-                        modifier = Modifier.padding(vertical = 0.dp), // 减小按钮的垂直内边距
-                        contentPadding = PaddingValues(
-                            horizontal = 4.dp,
-                            vertical = 2.dp
-                        ) // 调整按钮内容内边距
-                    ) {
-                        Text(
-                            if (isThinkExpanded) "隐藏思考" else "显示思考",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = contentColor.copy(alpha = 0.7f)
-                        )
-                        Icon(
-                            imageVector = if (isThinkExpanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                            contentDescription = if (isThinkExpanded) "隐藏思考" else "显示思考",
-                            modifier = Modifier.size(16.dp),
-                            tint = contentColor.copy(alpha = 0.7f)
-                        )
-                    }
-
-                    AnimatedVisibility(visible = isThinkExpanded) { // 可动画的可见性
-                        Box(
-                            modifier = Modifier
-                                .padding(top = 4.dp) // 与按钮的间距
-                                .background(
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), // 更淡的背景
-                                    RoundedCornerShape(4.dp) // 圆角
-                                )
-                                .padding(horizontal = 8.dp, vertical = 6.dp) // 内边距
-                        ) {
-                            SelectionContainer { // 允许复制思考内容
-                                Text(
-                                    text = message.thinkContent,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = contentColor.copy(alpha = 0.85f) // 思考内容颜色可以略深一点
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun MessageActionDialog(
-    message: MessageData,
-    onDismiss: () -> Unit,
-    onCopy: (MessageData) -> Unit,
-    onDelete: (MessageData) -> Unit,
-    onRegenerate: (MessageData) -> Unit, // 重新生成回调
-    onEdit: (MessageData) -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        text = {
-            Column(
-                modifier = Modifier
-                    .padding(top = 8.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
-                Text(
-                    "操作消息",
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
-                Text(
-                    text = "角色: ${message.role.replaceFirstChar { it.uppercase() }}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 4.dp)
-                )
-                Text(
-                    text = "内容: \"${message.content.take(80)}${if (message.content.length > 80) "..." else ""}\"",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-                message.thinkContent?.takeIf { it.isNotBlank() }?.let {
-                    Text(
-                        text = "思考: \"${it.take(50)}${if (it.length > 50) "..." else ""}\"",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    )
-                }
-                // 复制按钮
-                TextButton(
-                    onClick = { onCopy(message) },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(
-                        Icons.Filled.Share,
-                        contentDescription = "复制",
-                        modifier = Modifier.padding(end = 8.dp)
-                    )
-                    Text("复制消息")
-                }
-                Spacer(Modifier.height(4.dp))
-
-                // 编辑按钮 (可以根据角色决定是否显示，例如不允许编辑系统消息)
-                if (message.role == "user" || message.role == "assistant") {
-                    TextButton(
-                        onClick = { onEdit(message); /* onDismiss() is handled in ChatScreen */ },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(
-                            Icons.Filled.Edit,
-                            contentDescription = "编辑",
-                            modifier = Modifier.padding(end = 8.dp)
-                        )
-                        Text("编辑消息")
-                    }
-                    Spacer(Modifier.height(4.dp))
-                }
-
-                // 重新回复按钮 (仅对 user 和 assistant 消息有意义，但为简化，都显示)
-                // 你可以根据 message.role 决定是否显示此按钮
-                // if (message.role == "user" || message.role == "assistant")
-                TextButton(
-                    onClick = { onRegenerate(message) },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.Send,
-                        contentDescription = "重新回复",
-                        modifier = Modifier.padding(end = 8.dp)
-                    )
-                    Text("重新回复")
-                }
-                Spacer(Modifier.height(4.dp))
-
-
-                // 删除按钮
-                TextButton(
-                    onClick = { onDelete(message) },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Icon(
-                        Icons.Filled.Delete,
-                        contentDescription = "删除",
-                        modifier = Modifier.padding(end = 8.dp)
-                    )
-                    Text("删除消息")
-                }
-            }
-        },
-        confirmButton = { // 只保留一个取消按钮，因为操作按钮都在列表里了
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(end = 8.dp, bottom = 8.dp),
-                horizontalArrangement = Arrangement.End
-            ) {
-                TextButton(
-                    onClick = onDismiss
-                ) {
-                    Text("取消")
-                }
-            }
-        },
-        dismissButton = null, // 移除单独的 DismissButton
-        icon = null,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = MaterialTheme.shapes.large
-    )
-}
-
-@Composable
-fun StreamingResponseDialog(
-    content: String,
-    onDismissRequest: () -> Unit
-) {
-    val scrollState = rememberScrollState()
-
-    LaunchedEffect(content) { // 当内容变化时，滚动到底部
-        if (scrollState.maxValue > 0) {
-            scrollState.animateScrollTo(scrollState.maxValue)
-        }
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismissRequest,
-        title = { Text("实时回复中...") },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 100.dp, max = 300.dp) // 限制最大高度
-                    .verticalScroll(scrollState) // 使其可滚动
-            ) {
-                SelectionContainer { // 允许选择和复制文本
-                    Text(
-                        text = content.ifBlank { "等待响应..." }, // 内容为空时的提示
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismissRequest) {
-                Icon(
-                    Icons.Filled.KeyboardArrowUp,
-                    contentDescription = "隐藏",
-                    modifier = Modifier.padding(end = 4.dp)
-                )
-                Text("隐藏")
-            }
-        },
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLowest, // 使用较低的容器颜色
-        shape = MaterialTheme.shapes.large
-    )
-}
 
 suspend fun callLLMApi(
     apiKey: String,

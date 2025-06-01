@@ -12,6 +12,7 @@ object SharedPreferencesUtils {
     private const val KEY_SELECTED_MODEL = "selected_model_api_name"
     private const val KEY_SYSTEM_PROMPT = "system_prompt"
     private const val KEY_GLOBAL_MODEL_SETTINGS = "global_model_settings"
+    private const val KEY_AUTO_SAVE_ON_SWITCH = "auto_save_on_switch_session"
     private val json = Json { ignoreUnknownKeys = true; isLenient = true } // 需要 Json 实例
 
     private fun getPreferences(context: Context): SharedPreferences {
@@ -43,6 +44,14 @@ object SharedPreferencesUtils {
 
     fun loadSystemPrompt(context: Context, defaultValue: String) =
         load(context, KEY_SYSTEM_PROMPT, defaultValue)
+
+    fun saveAutoSaveOnSwitchPreference(context: Context, autoSave: Boolean) {
+        getPreferences(context).edit { putBoolean(KEY_AUTO_SAVE_ON_SWITCH, autoSave) }
+    }
+
+    fun loadAutoSaveOnSwitchPreference(context: Context, defaultValue: Boolean = false): Boolean { // 默认不自动保存
+        return getPreferences(context).getBoolean(KEY_AUTO_SAVE_ON_SWITCH, defaultValue)
+    }
 
     fun saveGlobalModelSettings(context: Context, settings: ModelSettings) {
         val jsonString = json.encodeToString(settings)
