@@ -17,7 +17,7 @@ android {
     val versionProps = Properties()
     versionProps.load(FileInputStream(versionPropsFile))
     val verCode = Integer.parseInt(versionProps["VERSION_CODE"] as String)
-    if (":app:assembleRelease" in  gradle.startParameter.taskNames) {
+    if (":app:assembleRelease" in gradle.startParameter.taskNames) {
         versionProps["VERSION_CODE"] = (verCode + 1).toString()
         versionProps.store(versionPropsFile.writer(), null)
     }
@@ -41,15 +41,8 @@ android {
             )
         }
     }
-
     configurations.all {
-        resolutionStrategy.eachDependency {
-            if (requested.group == "io.coil-kt") {
-                // useTarget("") // 使用空目标来排除它
-                useVersion("none") // "none" 是一种更明确的方式来表示排除
-                because("避免引入旧版 coil")
-            }
-        }
+        exclude(group = "io.coil-kt")
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
