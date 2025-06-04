@@ -28,6 +28,7 @@
 *   **UI**: Jetpack Compose (Android 的现代声明式 UI 工具包)
 *   **HTTP Client**: OkHttp
 *   **JSON Serialization**: kotlinx.serialization
+*   **MarkDown**: [compose-markdown](https://github.com/jeziellago/compose-markdown)
 *   **语言**: Kotlin
 *   **构建工具**: Gradle
 

@@ -41,6 +41,10 @@ android {
             )
         }
     }
+    // 避免引入旧版 coil
+    configurations.all {
+        exclude(group = "io.coil-kt", module = "coil")
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -54,27 +58,30 @@ android {
     applicationVariants.all {
         outputs.all {
             val apkName = "KlusterAI_${defaultConfig.versionName}.APK"
-            //val minSdk = project.extensions.getByType(BaseAppModuleExtension::class.java).defaultConfig.minSdk
-            //val abi = filters.find { it.filterType == "ABI" }?.identifier ?: "all"
             (this as BaseVariantOutputImpl).outputFileName = apkName
         }
     }
 }
 
 dependencies {
-//    implementation("io.noties.markwon:core:4.6.2")
-//    implementation("io.noties.markwon:ext-strikethrough:4.6.2")
-//    implementation("io.noties.markwon:ext-tables:4.6.2")
-//    implementation("io.noties.markwon:html:4.6.2")
-//    implementation("io.noties.markwon:linkify:4.6.2")
-//    implementation("io.noties.markwon:ext-tasklist:4.6.2")
-//    implementation("com.github.jeziellago:Markwon:58aa5aba6a")
+    // markdown modified from implementation(libs.compose.markdown)
+    implementation(libs.markwon)
+    implementation(libs.markwon.core)
+    implementation(libs.markwon.ext.strikethrough)
+    implementation(libs.markwon.ext.tables)
+    implementation(libs.markwon.html)
+    implementation(libs.markwon.linkify)
+    implementation(libs.markwon.ext.tasklist)
+
     // image loader for markdown
-    implementation(libs.coil)
-    // markdown
-    implementation(libs.compose.markdown)
+    implementation(libs.coil3)
+    implementation(libs.coil3.network.okhttp)
+    implementation(libs.coil3.gif)
     implementation(libs.okhttp)
-    implementation(libs.json)
+
+    //replaced with kotlinx.serialization
+    //implementation(libs.json)
+
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines)
 
@@ -86,6 +93,9 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+    // appcompat for markdown
+    implementation(libs.androidx.appcompat)
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

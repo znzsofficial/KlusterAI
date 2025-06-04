@@ -14,7 +14,7 @@ object SharedPreferencesUtils {
     private const val KEY_SYSTEM_PROMPT = "system_prompt"
     private const val KEY_GLOBAL_MODEL_SETTINGS = "global_model_settings"
     private const val KEY_AUTO_SAVE_ON_SWITCH = "auto_save_on_switch_session"
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true } // 需要 Json 实例
+    private val json = Json { ignoreUnknownKeys = true; isLenient = true } // Json 实例
 
     private fun getPreferences(context: Context): SharedPreferences {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
