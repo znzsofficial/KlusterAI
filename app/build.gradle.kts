@@ -41,9 +41,15 @@ android {
             )
         }
     }
-    // 避免引入旧版 coil
+
     configurations.all {
-        exclude(group = "io.coil-kt", module = "coil")
+        resolutionStrategy.eachDependency {
+            if (requested.group == "io.coil-kt") {
+                // useTarget("") // 使用空目标来排除它
+                useVersion("none") // "none" 是一种更明确的方式来表示排除
+                because("避免引入旧版 coil")
+            }
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
