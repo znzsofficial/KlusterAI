@@ -1,4 +1,4 @@
-package com.nekolaska.klusterai
+package com.nekolaska.klusterai.data
 
 // --- Model Data Definition ---
 data class ModelInfo(val displayName: String, val apiName: String)

@@ -34,7 +34,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
-import com.nekolaska.klusterai.MessageData
+import com.nekolaska.klusterai.data.MessageData
 import dev.jeziellago.compose.markdowntext.MarkdownText
 
 

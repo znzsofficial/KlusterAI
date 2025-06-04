@@ -7,6 +7,9 @@ import kotlinx.serialization.json.Json
 import java.io.File
 import java.util.UUID
 import androidx.core.content.edit
+import com.nekolaska.klusterai.data.DEFAULT_MODEL_API_NAME
+import com.nekolaska.klusterai.data.MessageData
+import com.nekolaska.klusterai.data.ModelSettings
 
 @Serializable // 确保 MessageData 可序列化
 data class MessageDataSerializable( // 创建一个可序列化的版本，如果原始 MessageData 不能直接序列化

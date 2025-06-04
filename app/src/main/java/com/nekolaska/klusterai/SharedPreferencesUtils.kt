@@ -4,6 +4,7 @@ package com.nekolaska.klusterai
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
+import com.nekolaska.klusterai.data.ModelSettings
 import kotlinx.serialization.json.Json
 
 object SharedPreferencesUtils {

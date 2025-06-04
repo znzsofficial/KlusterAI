@@ -43,8 +43,8 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.text.style.TextAlign
-import com.nekolaska.klusterai.ModelSettings
-import com.nekolaska.klusterai.availableModels
+import com.nekolaska.klusterai.data.ModelSettings
+import com.nekolaska.klusterai.data.availableModels
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)

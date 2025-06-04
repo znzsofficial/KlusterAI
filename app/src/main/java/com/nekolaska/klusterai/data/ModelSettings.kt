@@ -1,4 +1,4 @@
-package com.nekolaska.klusterai
+package com.nekolaska.klusterai.data
 
 import kotlinx.serialization.Serializable
 

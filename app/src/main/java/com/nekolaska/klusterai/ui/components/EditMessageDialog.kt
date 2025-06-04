@@ -56,7 +56,7 @@ fun EditMessageDialog(
                 maxLines = 10, // 限制最大行数
                 keyboardOptions = KeyboardOptions.Default.copy(
                     capitalization = KeyboardCapitalization.Sentences,
-                    imeAction = ImeAction.Done // 使用 Done 而不是 Send
+                    imeAction = ImeAction.Default // 输入法换行
                 ),
                 keyboardActions = KeyboardActions(onDone = {
                     if (textFieldValue.text.isNotBlank()) {
