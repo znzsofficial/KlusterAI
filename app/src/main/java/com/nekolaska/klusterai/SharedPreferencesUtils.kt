@@ -14,6 +14,7 @@ object SharedPreferencesUtils {
     private const val KEY_SYSTEM_PROMPT = "system_prompt"
     private const val KEY_GLOBAL_MODEL_SETTINGS = "global_model_settings"
     private const val KEY_AUTO_SAVE_ON_SWITCH = "auto_save_on_switch_session"
+    private const val KEY_AUTO_VERIFY_RESPONSE = "auto_verify_response"
     private val json = Json { ignoreUnknownKeys = true; isLenient = true } // Json 实例
 
     private fun getPreferences(context: Context): SharedPreferences {
@@ -50,8 +51,19 @@ object SharedPreferencesUtils {
         getPreferences(context).edit { putBoolean(KEY_AUTO_SAVE_ON_SWITCH, autoSave) }
     }
 
-    fun loadAutoSaveOnSwitchPreference(context: Context, defaultValue: Boolean = false): Boolean { // 默认不自动保存
+    fun loadAutoSaveOnSwitchPreference(
+        context: Context,
+        defaultValue: Boolean = false
+    ): Boolean { // 默认不自动保存
         return getPreferences(context).getBoolean(KEY_AUTO_SAVE_ON_SWITCH, defaultValue)
+    }
+
+    fun saveAutoVerifyPreference(context: Context, autoVerify: Boolean) {
+        getPreferences(context).edit { putBoolean(KEY_AUTO_VERIFY_RESPONSE, autoVerify) }
+    }
+
+    fun loadAutoVerifyPreference(context: Context, defaultValue: Boolean = true): Boolean {
+        return getPreferences(context).getBoolean(KEY_AUTO_VERIFY_RESPONSE, defaultValue)
     }
 
     fun saveGlobalModelSettings(context: Context, settings: ModelSettings) {

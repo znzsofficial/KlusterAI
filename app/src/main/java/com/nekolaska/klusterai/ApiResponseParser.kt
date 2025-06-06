@@ -38,7 +38,7 @@ data class LlmResponse( // 顶层 JSON 对象
 
 // 初始化 Json 解析器实例，可以配置它
 // 将它作为顶层常量或 object 属性，以避免重复创建
-private val jsonParser = Json {
+val jsonParser = Json {
     ignoreUnknownKeys = true // 忽略JSON中存在但数据类中没有的字段
     isLenient = true         // 允许一些不严格的JSON格式（例如，尾随逗号，如果API输出不标准）
     coerceInputValues = true // 如果JSON中的值类型与数据类不匹配（例如，期望Int但收到String "123"），尝试转换

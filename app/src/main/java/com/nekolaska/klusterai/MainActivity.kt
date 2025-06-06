@@ -47,6 +47,7 @@ import com.nekolaska.klusterai.data.ApiRequestMessage
 import com.nekolaska.klusterai.data.DEFAULT_MODEL_API_NAME
 import com.nekolaska.klusterai.data.MessageData
 import com.nekolaska.klusterai.data.ModelSettings
+import com.nekolaska.klusterai.data.VerificationResult
 import com.nekolaska.klusterai.ui.components.EditMessageDialog
 import com.nekolaska.klusterai.ui.components.ErrorMessageDisplay
 import com.nekolaska.klusterai.ui.components.InputRow
@@ -58,6 +59,7 @@ import com.nekolaska.klusterai.ui.theme.KlusterAITheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -337,6 +339,9 @@ fun ChatScreen() {
     var autoSaveOnSwitchSessionGlobalPref by remember { //全局自动保存偏好
         mutableStateOf(SharedPreferencesUtils.loadAutoSaveOnSwitchPreference(context))
     }
+    var autoVerifyResponseGlobalPref by remember { // 全局自动审查偏好
+        mutableStateOf(SharedPreferencesUtils.loadAutoVerifyPreference(context))
+    }
 
     var globalApiKey by remember {
         mutableStateOf(SharedPreferencesUtils.loadApiKey(context, DEFAULT_API_KEY_FALLBACK))
@@ -362,6 +367,10 @@ fun ChatScreen() {
     var activeSystemPrompt by remember { mutableStateOf(globalDefaultSystemPrompt) }
     var activeModelSettings by remember { mutableStateOf(globalDefaultModelSettings) } // 单个对象存储当前会话激活的模型设置
 
+    // --- 幻觉审查相关状态 ---
+    var lastAssistantMessageIdForVerification by remember { mutableStateOf<Long?>(null) } // 用于关联审查结果和消息
+    var verificationResultForLastMessage by remember { mutableStateOf<VerificationResult?>(null) }
+    var showVerificationInProgress by remember { mutableStateOf(false) } // 显示审查进行中的状态
 
     // --- UI 控制状态 ---
     var isLoading by remember { mutableStateOf(false) }
@@ -616,27 +625,145 @@ fun ChatScreen() {
             //Log.d("ChatScreenLifecycle", "Observer removed.")
         }
     }
-    // --- API 请求 ---
-    fun triggerLLMRequest(historyForRequest: List<MessageData>, insertionIndex: Int? = null) {
-        if (globalApiKey.isBlank()) {
-            errorMessage = "API 密钥为空，请在全局设置中填写。"
-            return
-        }
-        val actualHistory = historyForRequest.toMutableList()
-        // 确保 System Prompt 在请求历史中是正确的
-        val systemMsgIndex = actualHistory.indexOfFirst { it.role == "system" }
-        if (activeSystemPrompt.isNotBlank()) {
-            val sysMsg = MessageData("system", activeSystemPrompt)
-            if (systemMsgIndex != -1) actualHistory[systemMsgIndex] = sysMsg
-            else actualHistory.add(0, sysMsg)
-        } else {
-            if (systemMsgIndex != -1) actualHistory.removeAt(systemMsgIndex)
+
+
+    // --- 幻觉审查逻辑 ---
+    fun processAndDisplayFinalResponse(
+        assistantMessage: MessageData,
+        verificationResult: VerificationResult?,
+        insertionIndex: Int?
+    ) {
+        //Log.d("VerificationProcess", "Processing final response. Hallucination: ${verificationResult?.hallucination}")
+        val finalMessageToShow = assistantMessage // 默认显示原始消息
+
+        // 更新状态以供 MessageBubble 使用
+        lastAssistantMessageIdForVerification = assistantMessage.id
+        verificationResultForLastMessage = verificationResult
+
+        if (verificationResult != null && verificationResult.hallucination != "0") {
+            //Log.w("Verification", "幻觉检测到: ${verificationResult.reasoning}")
+            Toast.makeText(context, "注意: 回复可能包含不准确之处。", Toast.LENGTH_LONG).show()
+            // MessageBubble 会根据 verificationResultForLastMessage 和消息ID来显示提示
         }
 
-        if (actualHistory.filterNot { it.role == "system" && it.content.isBlank() }.isEmpty()) {
-            errorMessage = "无法在没有有效用户消息的情况下发送请求。"
-            isLoading = false
+        val existingIndex = conversationHistory.indexOfFirst { it.id == finalMessageToShow.id }
+        if (existingIndex != -1) { // 如果草稿已存在（例如，在流式预览中部分添加）
+            conversationHistory[existingIndex] = finalMessageToShow
+        } else if (insertionIndex != null && insertionIndex >= 0 && insertionIndex <= conversationHistory.size) {
+            conversationHistory.add(insertionIndex, finalMessageToShow)
+        } else {
+            conversationHistory.add(finalMessageToShow)
+        }
+        markAsModified() // 最终消息添加到历史就算修改
+        // 清理 lastAssistantMessageIdForVerification 和 verificationResultForLastMessage 由 MessageBubble 的 key 变化或下一个审查触发
+    }
+
+    fun triggerVerification(
+        contextForVerification: List<MessageData>, // 包含主模型回复的完整上下文
+        originalAssistantMessage: MessageData, // 主模型刚生成的回复
+        insertionIndexForOriginal: Int? // 原计划插入主模型回复的位置
+    ) {
+        if (globalApiKey.isBlank()) {
+            errorMessage = "API 密钥为空，无法进行审查。"
+            showVerificationInProgress = false
+            processAndDisplayFinalResponse(
+                originalAssistantMessage,
+                null,
+                insertionIndexForOriginal
+            )
             return
+        }
+        showVerificationInProgress = true
+        verificationResultForLastMessage = null // 清除上一次的特定审查结果
+
+        val verificationMessages = contextForVerification.toMutableList() // 已经是完整的了
+        verificationMessages.add(MessageData(role = "user", content = VERIFICATION_USER_PROMPT))
+
+        //Log.d("Verification", "Triggering verification for message ID: ${originalAssistantMessage.id}")
+
+        coroutineScope.launch {
+            var completeJsonResponseFromApi: String?
+            try {
+                val verificationSettings = ModelSettings.DEFAULT.copy(
+                    temperature = 0.1f,
+                    topP = 0.1f,
+                    autoShowStreamingDialog = false // 审查模型调用不应触发流式对话框
+                )
+
+                completeJsonResponseFromApi = callLLMApi( // 使用现有的 callLLMApi
+                    apiKey = globalApiKey,
+                    modelApiName = VERIFICATION_MODEL_NAME,
+                    currentHistory = verificationMessages, // 包含审查指令
+                    settings = verificationSettings,
+                    onChunkReceived = { chunk ->
+                        // 假设审查模型将整个 JSON 作为 content 返回，这个 chunk 就是它
+                        //Log.v("VerificationChunk", "Chunk: $chunk")
+                        // 对于非流式JSON，这个回调可能只被调用一次，内容是完整的JSON
+                    }
+                )
+                //Log.d("Verification", "Verification raw JSON response: $completeJsonResponseFromApi")
+
+                if (completeJsonResponseFromApi != null && completeJsonResponseFromApi.isNotBlank()) {
+                    try {
+                        val result = jsonParser.decodeFromString<VerificationResult>(
+                            completeJsonResponseFromApi
+                        )
+                        processAndDisplayFinalResponse(
+                            originalAssistantMessage,
+                            result,
+                            insertionIndexForOriginal
+                        )
+                    } catch (_: SerializationException) {
+                        errorMessage = "解析审查结果失败: JSON格式错误。"
+                        //Log.e("Verification", "JSON Parsing failed for: $completeJsonResponseFromApi", e)
+
+                        // 凑活着显示
+                        processAndDisplayFinalResponse(
+                            originalAssistantMessage,
+                            VerificationResult(completeJsonResponseFromApi, "1"),
+                            insertionIndexForOriginal
+                        )
+                    }
+                } else {
+                    errorMessage = "审查模型返回空响应。"
+                    //Log.e("Verification", "Verification model returned null or blank.")
+                    processAndDisplayFinalResponse(
+                        originalAssistantMessage,
+                        null,
+                        insertionIndexForOriginal
+                    )
+                }
+            } catch (e: Exception) {
+                errorMessage = "幻觉审查 API 调用失败: ${e.message}"
+                //Log.e("Verification", "Verification API call failed", e)
+                processAndDisplayFinalResponse(
+                    originalAssistantMessage,
+                    null,
+                    insertionIndexForOriginal
+                )
+            } finally {
+                showVerificationInProgress = false
+            }
+        }
+    }
+
+
+    fun triggerLLMRequest(historyForRequest: List<MessageData>, insertionIndex: Int? = null) {
+        if (globalApiKey.isBlank()) {
+            errorMessage = "API 密钥为空"; return
+        }
+        // 确保 System Prompt 在请求历史中是正确的
+        val actualHistory = historyForRequest.toMutableList()
+        updateSystemMessageInHistory(actualHistory, activeSystemPrompt) // 确保使用当前激活的系统提示
+
+        if (actualHistory.filterNot { it.role == "system" && it.content.isBlank() }
+                .none { it.role == "user" && it.content.isNotBlank() } && actualHistory.none { it.role == "assistant" }) { // 确保至少有一个非空用户消息或助手消息（允许仅系统提示开始）
+            if (actualHistory.all { it.role == "system" } && actualHistory.any { it.content.isNotBlank() }) {
+                // 如果只有非空系统提示，也允许（某些模型支持）
+            } else {
+                errorMessage = "请输入有效消息后再发送。"
+                return
+            }
         }
 
         errorMessage = null
@@ -644,49 +771,67 @@ fun ChatScreen() {
         streamingContent.value = ""
         // 根据设置决定是否立即显示流式对话框
         showStreamingDialog = activeModelSettings.autoShowStreamingDialog
+        // 清理上一次的审查状态，因为我们要获取新回复
+        lastAssistantMessageIdForVerification = null
+        verificationResultForLastMessage = null
+
 
         coroutineScope.launch {
             var fullResponse: String?
+            var assistantMessageDraft: MessageData? = null
             try {
                 fullResponse = callLLMApi(
                     apiKey = globalApiKey,
-                    modelApiName = activeModelApiName, // 使用当前会话的激活模型
+                    modelApiName = activeModelApiName,
                     currentHistory = actualHistory,
-                    onChunkReceived = { chunk -> streamingContent.value += chunk },
-                    settings = activeModelSettings, // 传递 activeModelSettings
+                    settings = activeModelSettings,
+                    onChunkReceived = { chunk -> streamingContent.value += chunk }
                 )
-                val newAssistantMessage = if (fullResponse != null && fullResponse.isNotBlank()) {
+
+                if (fullResponse != null && fullResponse.isNotBlank()) {
                     val (thinkPart, remainingPart) = extractThinkSection(fullResponse)
-                    MessageData(
+                    assistantMessageDraft = MessageData(
                         role = "assistant",
                         content = remainingPart,
                         thinkContent = thinkPart
                     )
                 } else if (streamingContent.value.isNotBlank() && fullResponse.isNullOrBlank()) {
                     val (thinkPart, remainingPart) = extractThinkSection(streamingContent.value)
-                    MessageData(
+                    assistantMessageDraft = MessageData(
                         role = "assistant",
                         content = remainingPart,
                         thinkContent = thinkPart
                     )
                 } else {
-                    errorMessage = "从API收到空响应或无效响应。"
-                    null
-                }
-                newAssistantMessage?.let { msg ->
-                    if (insertionIndex != null && insertionIndex >= 0 && insertionIndex <= conversationHistory.size) {
-                        conversationHistory.add(insertionIndex, msg)
-                    } else {
-                        conversationHistory.add(msg)
-                    }
-                    markAsModified()
+                    errorMessage = "从API收到空响应。"
                 }
             } catch (e: IOException) {
                 errorMessage = "API 调用错误: ${e.message}"; e.printStackTrace()
             } catch (e: Exception) {
                 errorMessage = "发生未知错误: ${e.message}"; e.printStackTrace()
             } finally {
-                isLoading = false
+                isLoading = false // 主 LLM 请求结束
+                if (assistantMessageDraft != null) {
+                    if (autoVerifyResponseGlobalPref) { // 检查自动审查偏好
+                        //Log.d("ChatScreen", "Auto-verification is ON. Triggering verification.")
+                        val contextForVerification = actualHistory.toMutableList() // 这是发送给主LLM的上下文
+                        contextForVerification.add(assistantMessageDraft) // 把主LLM的回复也加入，供审查模型参考
+                        triggerVerification(
+                            contextForVerification,
+                            assistantMessageDraft,
+                            insertionIndex
+                        )
+                    } else {
+                        //Log.d("ChatScreen", "Auto-verification is OFF. Displaying response directly.")
+                        processAndDisplayFinalResponse(
+                            assistantMessageDraft,
+                            null,
+                            insertionIndex
+                        )
+                    }
+                } else {
+                    //Log.e("LLMRequest", "主LLM未能生成有效回复，跳过审查。")
+                }
             }
         }
     }
@@ -829,6 +974,21 @@ fun ChatScreen() {
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            // 审查进行中提示条
+            if (showVerificationInProgress) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f))
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("正在进行可靠性审查...", style = MaterialTheme.typography.bodySmall)
+                }
+            }
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -839,14 +999,21 @@ fun ChatScreen() {
                 reverseLayout = false // 正常顺序
             ) {
                 items(conversationHistory, key = { it.id }) { message ->
+                    // 获取这条消息对应的审查结果
+                    val currentVerification =
+                        if (message.id == lastAssistantMessageIdForVerification) {
+                            verificationResultForLastMessage
+                        } else {
+                            null
+                        }
                     MessageBubble(
                         message = message,
                         isContentSelectable = activeModelSettings.isTextSelectableInBubble,
-                        onLongClick = { msg ->
-                            messageForAction = msg
-                            showActionMenuDialog = true
-                        },
-                    )
+                        verificationResult = if (message.role == "assistant") currentVerification else null,
+                    ) { msg ->
+                        messageForAction = msg
+                        showActionMenuDialog = true
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
                 }
             }
@@ -872,13 +1039,16 @@ fun ChatScreen() {
             currentSelectedModelApiName = activeModelApiName,
             currentSystemPrompt = activeSystemPrompt,
             currentAutoSaveOnSwitch = autoSaveOnSwitchSessionGlobalPref, // 传递当前的全局偏好
+            currentAutoVerifyResponse = autoVerifyResponseGlobalPref, // 传递状态
             currentModelSettings = activeModelSettings, // 传递 activeModelSettings
-            onSaveGlobalDefaults = { newAutoSavePref, newApiKey, newModel, newPrompt, newSettings ->
+            onSaveGlobalDefaults = { newAutoSavePref, newAutoVerify, newApiKey, newModel, newPrompt, newSettings ->
                 globalApiKey = newApiKey
                 globalDefaultModelApiName = newModel
                 globalDefaultSystemPrompt = newPrompt
-                globalDefaultModelSettings = newSettings // 保存新的全局默认模型设置
+                globalDefaultModelSettings = newSettings // 保存全局默认模型设置
+
                 autoSaveOnSwitchSessionGlobalPref = newAutoSavePref // 更新全局偏好状态
+                autoVerifyResponseGlobalPref = newAutoVerify
 
                 SharedPreferencesUtils.apply {
                     saveApiKey(context, newApiKey)
@@ -886,6 +1056,7 @@ fun ChatScreen() {
                     saveSystemPrompt(context, newPrompt)
                     saveGlobalModelSettings(context, newSettings)
                     saveAutoSaveOnSwitchPreference(context, newAutoSavePref) // 保存到 SP
+                    saveAutoVerifyPreference(context, newAutoVerify)
                 }
 
                 if (currentSessionId == null) { // 如果当前是新聊天，立即应用全局更改

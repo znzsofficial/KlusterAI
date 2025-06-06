@@ -33,16 +33,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nekolaska.klusterai.data.MessageData
+import com.nekolaska.klusterai.data.VerificationResult
 import dev.jeziellago.compose.markdowntext.MarkdownText
 
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MessageBubble(
-    message: MessageData, onLongClick: (MessageData) -> Unit,
-    isContentSelectable: Boolean
+    message: MessageData,
+    isContentSelectable: Boolean,
+    verificationResult: VerificationResult?,
+    onLongClick: (MessageData) -> Unit,
 ) {
     val alignment = if (message.role == "user") Alignment.End else Alignment.Start
     val containerColor = when (message.role) {
@@ -157,6 +161,55 @@ fun MessageBubble(
                         }
                     }
                 }
+
+                // --- 显示幻觉审查结果 ---
+                if (message.role == "assistant" && verificationResult != null) {
+                    if (verificationResult.hallucination != "0") { // 只有当检测到幻觉时才显示
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.8f), // 可以稍微加深 alpha
+                                    RoundedCornerShape(4.dp)
+                                )
+                                .padding(horizontal = 8.dp, vertical = 6.dp)
+                        ) {
+                            Column {
+                                Text(
+                                    "⚠️ 可靠性审查提示：",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                                Text(
+                                    text = verificationResult.reasoning,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f)
+                                )
+                            }
+                        }
+                    } else {
+                        // 在没有幻觉时也给一个“已审查通过”的正面反馈
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f), // 使用一个柔和的颜色
+                                    RoundedCornerShape(4.dp)
+                                )
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                "✅ 可靠性审查通过。",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        }
+                    }
+                }
+                // --- 结束幻觉审查结果 ---
             }
         }
     }

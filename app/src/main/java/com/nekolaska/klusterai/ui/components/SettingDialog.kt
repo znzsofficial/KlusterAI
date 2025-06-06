@@ -55,15 +55,22 @@ fun SettingsDialog(
     currentSelectedModelApiName: String,
     currentSystemPrompt: String,
     currentAutoSaveOnSwitch: Boolean,
+    currentAutoVerifyResponse: Boolean,
     currentModelSettings: ModelSettings,
     onSaveGlobalDefaults: (
-        autoSave: Boolean, apiKey: String, modelApiName: String, systemPrompt: String, modelSettings: ModelSettings
+        autoSave: Boolean, autoVerify: Boolean, apiKey: String, modelApiName: String, systemPrompt: String, modelSettings: ModelSettings
     ) -> Unit,
     onSaveSessionSpecific: (modelApiName: String, systemPrompt: String, modelSettings: ModelSettings) -> Unit,
     onDismiss: () -> Unit
 ) {
     var autoSaveOnSwitchState by remember(currentAutoSaveOnSwitch, isGlobalSettingsMode) {
         mutableStateOf(if (isGlobalSettingsMode) currentAutoSaveOnSwitch else false)
+    }
+    var autoVerifyResponseState by remember(
+        currentAutoVerifyResponse,
+        isGlobalSettingsMode
+    ) {
+        mutableStateOf(if (isGlobalSettingsMode) currentAutoVerifyResponse else false)
     }
     var apiKeyInput by remember(currentApiKey, isGlobalSettingsMode) {
         mutableStateOf(if (isGlobalSettingsMode) currentApiKey else "")
@@ -123,6 +130,14 @@ fun SettingsDialog(
                             descriptionOff = "离开当前聊天（切换/新建/退出）时，若有未保存更改将提示操作。",
                             checked = autoSaveOnSwitchState,
                             onCheckedChange = { autoSaveOnSwitchState = it },
+                        )
+                        HorizontalDivider()
+                        SwitchSettingItem( // 自动审查开关
+                            title = "自动进行可靠性审查",
+                            descriptionOn = "每次模型回复后将自动调用审查模型。",
+                            descriptionOff = "模型回复后不自动进行审查。",
+                            checked = autoVerifyResponseState,
+                            onCheckedChange = { autoVerifyResponseState = it }
                         )
                     }
                 }
@@ -242,6 +257,7 @@ fun SettingsDialog(
                 if (isGlobalSettingsMode) {
                     onSaveGlobalDefaults(
                         autoSaveOnSwitchState,
+                        autoVerifyResponseState,
                         apiKeyInput,
                         selectedModelApiNameState,
                         systemPromptInput,
