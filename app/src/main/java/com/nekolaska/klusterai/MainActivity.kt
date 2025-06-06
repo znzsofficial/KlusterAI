@@ -35,7 +35,6 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -49,6 +48,7 @@ import com.nekolaska.klusterai.data.DEFAULT_MODEL_API_NAME
 import com.nekolaska.klusterai.data.MessageData
 import com.nekolaska.klusterai.data.ModelSettings
 import com.nekolaska.klusterai.ui.components.EditMessageDialog
+import com.nekolaska.klusterai.ui.components.ErrorMessageDisplay
 import com.nekolaska.klusterai.ui.components.InputRow
 import com.nekolaska.klusterai.ui.components.MessageActionDialog
 import com.nekolaska.klusterai.ui.components.MessageBubble
@@ -74,6 +74,18 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
+// Json 实例，用于序列化请求体
+// encodeDefaults = false: 如果属性值等于其在数据类中定义的默认值，则不序列化该属性。
+// 对于可选参数，通常在数据类中将它们设为可空并默认值为 null。
+// kotlinx.serialization 默认不序列化值为 null 的属性 (除非 explicitNulls = true)。
+private val jsonRequestBuilder = Json {
+    prettyPrint = false // API 请求通常不需要美化打印
+    encodeDefaults = false // 重要：如果属性值等于其默认值，则不序列化。
+    ignoreUnknownKeys = true // 解析响应时仍然有用（虽然这里主要用于序列化）
+    isLenient = true         // 增加对不严格JSON格式的容忍度（对请求体影响较小）
+}
+
 
 // Session 相关
 @OptIn(ExperimentalMaterial3Api::class)
@@ -816,12 +828,12 @@ fun ChatScreen() {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(horizontal = 16.dp)
         ) {
             LazyColumn(
                 state = listState,
                 modifier = Modifier
                     .weight(1f)
+                    .padding(horizontal = 16.dp)
                     .fillMaxWidth(),
                 contentPadding = PaddingValues(vertical = 8.dp),
                 reverseLayout = false // 正常顺序
@@ -843,17 +855,12 @@ fun ChatScreen() {
                     listState.animateScrollToItem(conversationHistory.size - 1) // 滚动到最新消息
                 }
             }
-            errorMessage?.let {
-                Text(
-                    it,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier
-                        .padding(vertical = 4.dp)
-                        .fillMaxWidth(),
-                    textAlign = TextAlign.Center
-                )
-            }
+            // 错误消息
+            ErrorMessageDisplay(
+                errorMessage = errorMessage,
+                onDismiss = { errorMessage = null }, // 当用户关闭时，将 errorMessage 状态设为 null
+                modifier = Modifier.padding(horizontal = 16.dp) // 给错误组件设置左右边距，使其与聊天内容对齐
+            )
         }
     }
 
@@ -1056,17 +1063,6 @@ fun updateSystemMessageInHistory(history: MutableList<MessageData>, systemPrompt
     }
 }
 
-// Json 实例，用于序列化请求体
-// encodeDefaults = false: 如果属性值等于其在数据类中定义的默认值，则不序列化该属性。
-// 对于可选参数，通常在数据类中将它们设为可空并默认值为 null。
-// kotlinx.serialization 默认不序列化值为 null 的属性 (除非 explicitNulls = true)。
-private val jsonRequestBuilder = Json {
-    prettyPrint = false // API 请求通常不需要美化打印
-    encodeDefaults = false // 重要：如果属性值等于其默认值，则不序列化。
-    ignoreUnknownKeys = true // 解析响应时仍然有用（虽然这里主要用于序列化）
-    isLenient = true         // 增加对不严格JSON格式的容忍度（对请求体影响较小）
-}
-
 suspend fun callLLMApi(
     apiKey: String,
     modelApiName: String,
@@ -1089,7 +1085,7 @@ suspend fun callLLMApi(
     //    如果只有系统消息，某些 API 可能允许，某些可能不允许。
     //    你需要根据你使用的 API 的具体要求来调整这里的逻辑。
     //    例如，如果API要求至少有一个 'user' 角色的消息（除非是对话的开始，只有system prompt）：
-    if (apiMessages.isEmpty() || (apiMessages.none { it.role == "user" } && apiMessages.any { it.role == "system" } && apiMessages.size == apiMessages.count { it.role == "system" } ) ) {
+    if (apiMessages.isEmpty() || (apiMessages.none { it.role == "user" } && apiMessages.any { it.role == "system" } && apiMessages.size == apiMessages.count { it.role == "system" })) {
         // 如果 apiMessages 为空，或者所有消息都是系统消息且没有用户消息。
         // （此条件可能需要根据API的具体要求调整，例如是否允许仅发送一个非空的系统消息）
         // 一个更简单的检查可能是：如果 apiMessages 为空，或者所有消息的角色都不是 "user"。
