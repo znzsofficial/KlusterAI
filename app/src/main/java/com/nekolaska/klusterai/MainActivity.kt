@@ -1010,6 +1010,26 @@ fun ChatScreen() {
                         message = message,
                         isContentSelectable = activeModelSettings.isTextSelectableInBubble,
                         verificationResult = if (message.role == "assistant") currentVerification else null,
+                        onCopyFeedbackAndEdit = { _, feedback -> // originalQuery暂时为空，下面处理
+                            // 找到这条助手消息之前的最近一条用户消息
+                            val assistantMessageIndex = conversationHistory.indexOfFirst { it.id == message.id }
+                            var originalUserQuery = "我不记得之前问了什么，" // 默认值
+
+                            if (assistantMessageIndex > 0) {
+                                // 从助手消息往前找最近的用户消息
+                                for (i in assistantMessageIndex - 1 downTo 0) {
+                                    if (conversationHistory[i].role == "user") {
+                                        originalUserQuery = conversationHistory[i].content
+                                        break
+                                    }
+                                }
+                            }
+
+                            val newPrompt = "根据以下反馈： “${feedback.take(200)}”\n请重新考虑或修正你对这个问题的回答：“${originalUserQuery.take(200)}”\n请直接给出修正后的回答："
+                            userInput = newPrompt // 将构造好的提示填充到输入框
+                            // 可以在这里加一个 Toast 提示用户输入框已填充
+                            Toast.makeText(context, "反馈已填充到输入框，请修改后发送", Toast.LENGTH_LONG).show()
+                        }
                     ) { msg ->
                         messageForAction = msg
                         showActionMenuDialog = true

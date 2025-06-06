@@ -12,17 +12,18 @@ junitVersion = "1.2.1"
 espressoCore = "3.6.1"
 kotlinxSerializationJson = "1.8.1"
 kotlinxCoroutines = "1.10.2"
-lifecycleRuntimeKtx = "2.9.0"
+lifecycleRuntimeKtx = "2.9.1"
 activityCompose = "1.10.1"
-composeBom = "2025.05.01"
+composeBom = "2025.06.00"
 okhttp = "4.12.0"
-appcompat = "1.7.0"
+appcompat = "1.7.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+#androidx-material-icons-extended = { module = "androidx.compose.material:material-icons-extended", version.ref = "composeBom" }
 coil3 = { module = "io.coil-kt.coil3:coil", version.ref = "coil3" }
 coil3-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil3" }
-coil3-gif  = { module = "io.coil-kt.coil3:coil-gif", version.ref = "coil3" }
+coil3-gif = { module = "io.coil-kt.coil3:coil-gif", version.ref = "coil3" }
 #compose-markdown = { module = "com.github.jeziellago:compose-markdown", version.ref = "composeMarkdown" }
 #json = { module = "org.json:json", version.ref = "json" }
 markwon-core = { module = "io.noties.markwon:core", version.ref = "markwon" }

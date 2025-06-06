@@ -12,10 +12,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Icon
@@ -46,6 +48,7 @@ fun MessageBubble(
     message: MessageData,
     isContentSelectable: Boolean,
     verificationResult: VerificationResult?,
+    onCopyFeedbackAndEdit: (originalQuery: String, feedback: String) -> Unit,
     onLongClick: (MessageData) -> Unit,
 ) {
     val alignment = if (message.role == "user") Alignment.End else Alignment.Start
@@ -187,6 +190,38 @@ fun MessageBubble(
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f)
                                 )
+
+                                // --- 基于反馈重新提问的按钮 ---
+                                TextButton(
+                                    onClick = {
+                                        // 这里需要找到与此助手回复相关的用户问题
+                                        // 这个逻辑需要在 ChatScreen 中处理，然后传递给 MessageBubble
+                                        // 或者 MessageBubble 回调一个事件，让 ChatScreen 处理
+                                        // 为简单起见，我们让 ChatScreen 处理，这里仅触发回调
+                                        onCopyFeedbackAndEdit(
+                                            "",
+                                            verificationResult.reasoning
+                                        ) // 第一个参数应为原始问题
+                                    },
+                                    modifier = Modifier.align(Alignment.End),
+                                    contentPadding = PaddingValues(
+                                        4.dp
+                                    )
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Edit,
+                                        contentDescription = "复制反馈并优化提问",
+                                        modifier = Modifier.size(18.dp),
+                                        tint = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        "优化提问",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                }
+                                // --- 结束按钮 ---
                             }
                         }
                     } else {
