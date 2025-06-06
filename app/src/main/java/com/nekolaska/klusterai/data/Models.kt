@@ -6,7 +6,6 @@ data class ModelInfo(val displayName: String, val apiName: String)
 val availableModels = listOf(
     ModelInfo("DeepSeek-R1-0528", "deepseek-ai/DeepSeek-R1-0528"),
     ModelInfo("DeepSeek-V3-0324", "deepseek-ai/DeepSeek-V3-0324"),
-    ModelInfo("DeepSeek-R1", "deepseek-ai/DeepSeek-R1"),
     //ModelInfo("Kluster 可靠性检查", "klusterai/verify-reliability"),
     ModelInfo("Qwen3-235B-A22B", "Qwen/Qwen3-235B-A22B-FP8"),
     ModelInfo("Qwen2.5-VL 7B", "Qwen/Qwen2.5-VL-7B-Instruct"),
