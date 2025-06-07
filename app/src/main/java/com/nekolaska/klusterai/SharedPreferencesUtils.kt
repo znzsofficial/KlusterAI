@@ -53,8 +53,8 @@ object SharedPreferencesUtils {
 
     fun loadAutoSaveOnSwitchPreference(
         context: Context,
-        defaultValue: Boolean = false
-    ): Boolean { // 默认不自动保存
+        defaultValue: Boolean = true
+    ): Boolean { // 默认自动保存
         return getPreferences(context).getBoolean(KEY_AUTO_SAVE_ON_SWITCH, defaultValue)
     }
 
@@ -62,7 +62,7 @@ object SharedPreferencesUtils {
         getPreferences(context).edit { putBoolean(KEY_AUTO_VERIFY_RESPONSE, autoVerify) }
     }
 
-    fun loadAutoVerifyPreference(context: Context, defaultValue: Boolean = true): Boolean {
+    fun loadAutoVerifyPreference(context: Context, defaultValue: Boolean = false): Boolean {
         return getPreferences(context).getBoolean(KEY_AUTO_VERIFY_RESPONSE, defaultValue)
     }
 

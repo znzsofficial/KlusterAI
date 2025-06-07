@@ -7,16 +7,16 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import com.nekolaska.klusterai.R
 
 @Composable
 fun InputRow(
@@ -46,7 +46,6 @@ fun InputRow(
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp, vertical = 8.dp),
             // verticalAlignment = if (isInputExpanded) Alignment.Bottom else Alignment.CenterVertically
-            // 改为 Alignment.Bottom 使所有元素在展开时底部对齐，TextField 向上扩展
             verticalAlignment = Alignment.Bottom
         ) {
             IconButton(
@@ -54,7 +53,7 @@ fun InputRow(
                 // modifier = Modifier.align(Alignment.CenterVertically) // 按钮始终垂直居中于行
             ) {
                 Icon(
-                    imageVector = if (isInputExpanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                    painter = painterResource(id = if (isInputExpanded) R.drawable.fold else R.drawable.expand),
                     contentDescription = if (isInputExpanded) "折叠输入框" else "展开输入框",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant // 给图标一个明确的颜色
                 )
@@ -67,13 +66,14 @@ fun InputRow(
                 modifier = Modifier.weight(1f),
                 shape = if (isInputExpanded) MaterialTheme.shapes.medium else MaterialTheme.shapes.extraLarge, // 展开时方一点，折叠时更圆
                 color = textFieldContainerColor, // 使用根据状态变化的容器颜色
-                border = if (isInputExpanded) BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null // 展开时加一个细边框
+                border = if (isInputExpanded) BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outlineVariant
+                ) else null // 展开时加一个细边框
             ) {
                 TextField(
                     value = userInput,
-                    onValueChange = {
-                        if (it.length <= if (isInputExpanded) 5000 else 500) onUserInputChange(it)
-                    },
+                    onValueChange = onUserInputChange,
                     placeholder = { Text("输入您的消息...") },
                     modifier = Modifier.fillMaxWidth(), // TextField 填满包裹它的 Surface
                     enabled = !isLoading,
@@ -101,14 +101,13 @@ fun InputRow(
                         disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                         cursorColor = MaterialTheme.colorScheme.primary,
                         focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        unfocusedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
                 )
             }
 
 
             Spacer(modifier = Modifier.width(4.dp))
-
             IconButton(
                 onClick = onSendClick,
                 enabled = !isLoading && userInput.isNotBlank() && apiKey.isNotBlank(),
