@@ -23,7 +23,6 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -36,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,236 +46,617 @@ import androidx.compose.ui.text.style.TextAlign
 import com.nekolaska.klusterai.data.ModelSettings
 import com.nekolaska.klusterai.data.availableModels
 import java.util.Locale
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.pager.HorizontalPager // 导入 Pager
+import androidx.compose.foundation.pager.rememberPagerState // 导入 PagerState
+import androidx.compose.material3.Tab // 导入 Tab
+import androidx.compose.material3.TabRow // 导入 TabRow
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
+import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+
+@OptIn(
+    ExperimentalMaterial3Api::class,
+    ExperimentalFoundationApi::class
+) // 添加 ExperimentalFoundationApi for Pager
 @Composable
 fun SettingsDialog(
-    isGlobalSettingsMode: Boolean,
-    currentApiKey: String,
-    currentSelectedModelApiName: String,
-    currentSystemPrompt: String,
-    currentAutoSaveOnSwitch: Boolean,
-    currentAutoVerifyResponse: Boolean,
-    currentModelSettings: ModelSettings,
-    onSaveGlobalDefaults: (
-        autoSave: Boolean, autoVerify: Boolean, apiKey: String, modelApiName: String, systemPrompt: String, modelSettings: ModelSettings
-    ) -> Unit,
-    onSaveSessionSpecific: (modelApiName: String, systemPrompt: String, modelSettings: ModelSettings) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var autoSaveOnSwitchState by remember(currentAutoSaveOnSwitch, isGlobalSettingsMode) {
-        mutableStateOf(if (isGlobalSettingsMode) currentAutoSaveOnSwitch else false)
-    }
-    var autoVerifyResponseState by remember(
-        currentAutoVerifyResponse,
-        isGlobalSettingsMode
-    ) {
-        mutableStateOf(if (isGlobalSettingsMode) currentAutoVerifyResponse else false)
-    }
-    var apiKeyInput by remember(currentApiKey, isGlobalSettingsMode) {
-        mutableStateOf(if (isGlobalSettingsMode) currentApiKey else "")
-    }
-    var selectedModelApiNameState by remember(currentSelectedModelApiName) {
-        mutableStateOf(currentSelectedModelApiName)
-    }
-    var systemPromptInput by remember(currentSystemPrompt) { mutableStateOf(currentSystemPrompt) }
+    // --- 传入参数调整 ---
+    // 我们需要区分当前会话的值和全局默认值，即使在同一个对话框里
+    // 这意味着可能需要传入两套值，或者根据 currentSessionId 决定显示哪一套
+    // 为简化，我们先假设 SettingsDialog 内部处理值的显示切换，
+    // 但保存时，它需要知道当前激活的 Pager 页面是什么。
 
-    var autoShowDialogState by remember(currentModelSettings.autoShowStreamingDialog) {
-        mutableStateOf(currentModelSettings.autoShowStreamingDialog)
+    // 全局设置的值
+    globalApiKey: String,
+    globalDefaultModelApiName: String,
+    globalDefaultSystemPrompt: String,
+    globalDefaultModelSettings: ModelSettings,
+    globalAutoSaveOnSwitch: Boolean,
+    globalAutoVerifyResponse: Boolean,
+
+    // 当前会话的值 (如果存在)
+    currentSessionModelApiName: String?, // 可空，表示没有活动会话或使用全局
+    currentSessionSystemPrompt: String?,
+    currentSessionModelSettings: ModelSettings?,
+
+    // 回调
+    onSaveGlobalDefaults: (
+        autoSave: Boolean, autoVerify: Boolean, apiKey: String,
+        modelApiName: String, systemPrompt: String, modelSettings: ModelSettings
+    ) -> Unit,
+    onUpdateCurrentSessionSettings: ( // 当用户在“当前会话”页修改时，立即更新 ChatScreen 中的 activeXXX 状态
+        modelApiName: String, systemPrompt: String, modelSettings: ModelSettings
+    ) -> Unit,
+    onDismiss: () -> Unit,
+    hasActiveSession: Boolean // 标记是否有活动会话，用于启用/禁用“当前会话”Tab
+) {
+    val pagerState =
+        rememberPagerState(pageCount = { if (hasActiveSession) 2 else 1 }) // 如果没有活动会话，只有全局页
+    val coroutineScope = rememberCoroutineScope()
+
+    // --- 状态变量 ---
+    // 全局设置的状态
+    var apiKeyInputState by remember(globalApiKey) { mutableStateOf(globalApiKey) }
+    var globalModelApiNameState by remember(globalDefaultModelApiName) {
+        mutableStateOf(
+            globalDefaultModelApiName
+        )
     }
-    var isTextSelectableState by remember(currentModelSettings.isTextSelectableInBubble) {
-        mutableStateOf(currentModelSettings.isTextSelectableInBubble)
+    var globalSystemPromptState by remember(globalDefaultSystemPrompt) {
+        mutableStateOf(
+            globalDefaultSystemPrompt
+        )
     }
-    var temperatureState by remember(currentModelSettings.temperature) {
-        mutableFloatStateOf(currentModelSettings.temperature)
+    var globalAutoSaveState by remember(globalAutoSaveOnSwitch) {
+        mutableStateOf(
+            globalAutoSaveOnSwitch
+        )
     }
-    var frequencyPenaltyState by remember(currentModelSettings.frequencyPenalty) {
-        mutableFloatStateOf(currentModelSettings.frequencyPenalty)
+    var globalAutoVerifyState by remember(globalAutoVerifyResponse) {
+        mutableStateOf(
+            globalAutoVerifyResponse
+        )
     }
-    var topPState by remember(currentModelSettings.topP) {
-        mutableFloatStateOf(currentModelSettings.topP)
+    var globalTempState by remember(globalDefaultModelSettings.temperature) {
+        mutableFloatStateOf(
+            globalDefaultModelSettings.temperature
+        )
     }
+    var globalFreqPState by remember(globalDefaultModelSettings.frequencyPenalty) {
+        mutableFloatStateOf(
+            globalDefaultModelSettings.frequencyPenalty
+        )
+    }
+    var globalTopPState by remember(globalDefaultModelSettings.topP) {
+        mutableFloatStateOf(
+            globalDefaultModelSettings.topP
+        )
+    }
+    var globalAutoShowDialogState by remember(globalDefaultModelSettings.autoShowStreamingDialog) {
+        mutableStateOf(
+            globalDefaultModelSettings.autoShowStreamingDialog
+        )
+    }
+    var globalIsTextSelectableState by remember(globalDefaultModelSettings.isTextSelectableInBubble) {
+        mutableStateOf(
+            globalDefaultModelSettings.isTextSelectableInBubble
+        )
+    }
+
+    // 当前会话设置的状态 (如果 currentSessionXXX 为 null，则使用全局默认作为初始值，但不直接修改全局状态)
+    var sessionModelApiNameState by remember(
+        currentSessionModelApiName,
+        globalDefaultModelApiName
+    ) {
+        mutableStateOf(currentSessionModelApiName ?: globalDefaultModelApiName)
+    }
+    var sessionSystemPromptState by remember(
+        currentSessionSystemPrompt,
+        globalDefaultSystemPrompt
+    ) {
+        mutableStateOf(currentSessionSystemPrompt ?: globalDefaultSystemPrompt)
+    }
+    // 对于 ModelSettings，如果 currentSessionModelSettings 为null，则用全局的
+    val initialSessionSettings = currentSessionModelSettings ?: globalDefaultModelSettings
+    var sessionTempState by remember(initialSessionSettings.temperature) {
+        mutableFloatStateOf(
+            initialSessionSettings.temperature
+        )
+    }
+    var sessionFreqPState by remember(initialSessionSettings.frequencyPenalty) {
+        mutableFloatStateOf(
+            initialSessionSettings.frequencyPenalty
+        )
+    }
+    var sessionTopPState by remember(initialSessionSettings.topP) {
+        mutableFloatStateOf(
+            initialSessionSettings.topP
+        )
+    }
+    var sessionAutoShowDialogState by remember(initialSessionSettings.autoShowStreamingDialog) {
+        mutableStateOf(
+            initialSessionSettings.autoShowStreamingDialog
+        )
+    }
+    var sessionIsTextSelectableState by remember(initialSessionSettings.isTextSelectableInBubble) {
+        mutableStateOf(
+            initialSessionSettings.isTextSelectableInBubble
+        )
+    }
+
+
     var modelDropdownExpanded by remember { mutableStateOf(false) }
 
-    val defaultExpansionState = false // 高级参数默认折叠
+
+    // 当 Pager 页面切换时，如果从全局页切换到会话页（且会话页之前未初始化或需要刷新），
+    // 可能需要重新基于 currentSessionXXX 初始化会话页的状态。
+    // 但由于 remember 的 key 包含了 currentSessionXXX，它们应该在 currentSessionXXX 变化时自动重置。
+
+    val pages = mutableListOf("全局默认")
+    if (hasActiveSession) {
+        pages.add("当前会话")
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (isGlobalSettingsMode) "全局默认设置" else "当前会话设置") },
+        title = { Text("应用设置") }, // 通用标题
         text = {
-            Column(
-                modifier = Modifier
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 8.dp) // 给整个可滚动内容区域统一的水平内边距
-            ) {
-
-                if (isGlobalSettingsMode) {
-                    ExpandableSettingSection(title = "API 设置", initiallyExpanded = true) {
-                        OutlinedTextField(
-                            value = apiKeyInput,
-                            onValueChange = { if (it.length <= 100) apiKeyInput = it },
-                            label = { Text("API 密钥 (全局)") },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp, bottom = 8.dp),
-                            singleLine = true,
-                            placeholder = { Text("在此输入您的 API Key") }
-                        )
-                    }
-
-                    ExpandableSettingSection(title = "应用行为", initiallyExpanded = false) {
-                        SwitchSettingItem(
-                            title = "离开当前聊天时自动保存",
-                            descriptionOn = "切换/新建会话或退出应用时，将自动保存未保存的更改。",
-                            descriptionOff = "离开当前聊天（切换/新建/退出）时，若有未保存更改将提示操作。",
-                            checked = autoSaveOnSwitchState,
-                            onCheckedChange = { autoSaveOnSwitchState = it },
-                        )
-                        HorizontalDivider()
-                        SwitchSettingItem( // 自动审查开关
-                            title = "自动进行可靠性审查",
-                            descriptionOn = "每次模型回复后将自动调用审查模型。",
-                            descriptionOff = "模型回复后不自动进行审查。",
-                            checked = autoVerifyResponseState,
-                            onCheckedChange = { autoVerifyResponseState = it }
-                        )
+            Column(modifier = Modifier.wrapContentHeight()) {
+                if (pages.size > 1) { // 只有当有多于一个页面时才显示 TabRow
+                    TabRow(
+                        selectedTabIndex = pagerState.currentPage,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh, // 使Tab背景与对话框内容区域一致
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant, // Tab文本颜色
+                        indicator = { tabPositions -> // 自定义指示器
+                            if (pagerState.currentPage < tabPositions.size) {
+                                TabRowDefaults.SecondaryIndicator( // 使用更细的指示器
+                                    modifier = Modifier.tabIndicatorOffset(tabPositions[pagerState.currentPage]),
+                                    height = 2.dp, // 指示器高度
+                                    color = MaterialTheme.colorScheme.primary // 指示器颜色
+                                )
+                            }
+                        },
+                        divider = {} // 移除 TabRow 下方的默认分隔线
+                    ) {
+                        pages.forEachIndexed { index, title ->
+                            Tab(
+                                selected = pagerState.currentPage == index,
+                                onClick = {
+                                    coroutineScope.launch {
+                                        pagerState.animateScrollToPage(
+                                            index
+                                        )
+                                    }
+                                },
+                                text = {
+                                    Text(
+                                        title,
+                                        style = MaterialTheme.typography.labelLarge
+                                    )
+                                }, // 使用稍大一点的标签字体
+                                selectedContentColor = MaterialTheme.colorScheme.primary, // 选中时的文本颜色
+                                unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant // 未选中时的文本颜色
+                            )
+                        }
                     }
                 }
 
-                ExpandableSettingSection(title = "模型与提示", initiallyExpanded = true) {
-                    ExposedDropdownMenuBox(
-                        expanded = modelDropdownExpanded,
-                        onExpandedChange = { modelDropdownExpanded = !modelDropdownExpanded },
-                        modifier = Modifier.padding(vertical = 4.dp) // 给Box一些垂直内边距
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier
+                        .weight(1f, fill = false)// fill = false 允许 Pager 根据内容收缩高度
+                        .wrapContentHeight()       // 再次尝试让 Pager 包裹内容
+                        .verticalScroll(rememberScrollState()) // 让 Pager 内容可滚动
+                ) { pageIndex ->
+                    Column(
+                        modifier = Modifier
+                            .padding(8.dp)
+                            .padding(horizontal = 16.dp, vertical = 8.dp) // 给每页内容统一的内边距
+                            .wrapContentHeight() // 让页面内容也包裹高度
                     ) {
-                        OutlinedTextField(
-                            value = availableModels.find { it.apiName == selectedModelApiNameState }?.displayName
-                                ?: "选择模型",
-                            onValueChange = {}, // 因为 readOnly，所以为空
-                            readOnly = true,
-                            label = { Text("当前模型") }, // TextField 内部的 label
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelDropdownExpanded) },
-                            modifier = Modifier
-                                .menuAnchor(MenuAnchorType.PrimaryNotEditable) // 重要：用于只读 TextField 作为锚点
-                                .fillMaxWidth(),
-                            colors = OutlinedTextFieldDefaults.colors() // 使用默认颜色或自定义
-                        )
-                        ExposedDropdownMenu(
-                            expanded = modelDropdownExpanded,
-                            onDismissRequest = { modelDropdownExpanded = false }
-                        ) {
-                            availableModels.forEach { model ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            model.displayName,
-                                            style = MaterialTheme.typography.bodyMedium
+                        when (pageIndex) {
+                            0 -> { // 全局默认设置页
+                                GlobalSettingsPage(
+                                    apiKey = apiKeyInputState,
+                                    onApiKeyChange = { apiKeyInputState = it },
+                                    modelApiName = globalModelApiNameState,
+                                    onModelApiNameChange = { globalModelApiNameState = it },
+                                    systemPrompt = globalSystemPromptState,
+                                    onSystemPromptChange = { globalSystemPromptState = it },
+                                    autoSave = globalAutoSaveState,
+                                    onAutoSaveChange = { globalAutoSaveState = it },
+                                    autoVerify = globalAutoVerifyState,
+                                    onAutoVerifyChange = { globalAutoVerifyState = it },
+                                    temp = globalTempState,
+                                    onTempChange = { globalTempState = it },
+                                    freqP = globalFreqPState,
+                                    onFreqPChange = { globalFreqPState = it },
+                                    topP = globalTopPState,
+                                    onTopPChange = { globalTopPState = it },
+                                    autoShowDialog = globalAutoShowDialogState,
+                                    onAutoShowDialogChange = { globalAutoShowDialogState = it },
+                                    isTextSelectable = globalIsTextSelectableState,
+                                    onIsTextSelectableChange = { globalIsTextSelectableState = it },
+                                    modelDropdownExpanded = modelDropdownExpanded,
+                                    onModelDropdownExpandedChange = { modelDropdownExpanded = it }
+                                )
+                            }
+
+                            1 -> { // 当前会话设置页 (仅当 hasActiveSession)
+                                SessionSettingsPage(
+                                    modelApiName = sessionModelApiNameState,
+                                    onModelApiNameChange = {
+                                        sessionModelApiNameState = it
+                                        // 立即回调以更新 ChatScreen 中的 active 状态
+                                        onUpdateCurrentSessionSettings(
+                                            it, sessionSystemPromptState,
+                                            ModelSettings(
+                                                sessionTempState,
+                                                sessionFreqPState,
+                                                sessionAutoShowDialogState,
+                                                sessionTopPState,
+                                                sessionIsTextSelectableState
+                                            )
                                         )
                                     },
-                                    onClick = {
-                                        selectedModelApiNameState = model.apiName
-                                        modelDropdownExpanded = false
-                                    }
+                                    systemPrompt = sessionSystemPromptState,
+                                    onSystemPromptChange = {
+                                        sessionSystemPromptState = it
+                                        onUpdateCurrentSessionSettings(
+                                            sessionModelApiNameState, it,
+                                            ModelSettings(
+                                                sessionTempState,
+                                                sessionFreqPState,
+                                                sessionAutoShowDialogState,
+                                                sessionTopPState,
+                                                sessionIsTextSelectableState
+                                            )
+                                        )
+                                    },
+                                    temp = sessionTempState,
+                                    onTempChange = {
+                                        sessionTempState = it
+                                        onUpdateCurrentSessionSettings(
+                                            sessionModelApiNameState, sessionSystemPromptState,
+                                            ModelSettings(
+                                                it,
+                                                sessionFreqPState,
+                                                sessionAutoShowDialogState,
+                                                sessionTopPState,
+                                                sessionIsTextSelectableState
+                                            )
+                                        )
+                                    },
+                                    freqP = sessionFreqPState,
+                                    onFreqPChange = {
+                                        sessionFreqPState = it
+                                        onUpdateCurrentSessionSettings(
+                                            sessionModelApiNameState, sessionSystemPromptState,
+                                            ModelSettings(
+                                                sessionTempState,
+                                                it,
+                                                sessionAutoShowDialogState,
+                                                sessionTopPState,
+                                                sessionIsTextSelectableState
+                                            )
+                                        )
+                                    },
+                                    topP = sessionTopPState,
+                                    onTopPChange = {
+                                        sessionTopPState = it
+                                        onUpdateCurrentSessionSettings(
+                                            sessionModelApiNameState, sessionSystemPromptState,
+                                            ModelSettings(
+                                                sessionTempState,
+                                                sessionFreqPState,
+                                                sessionAutoShowDialogState,
+                                                it,
+                                                sessionIsTextSelectableState
+                                            )
+                                        )
+                                    },
+                                    autoShowDialog = sessionAutoShowDialogState,
+                                    onAutoShowDialogChange = {
+                                        sessionAutoShowDialogState = it
+                                        onUpdateCurrentSessionSettings(
+                                            sessionModelApiNameState, sessionSystemPromptState,
+                                            ModelSettings(
+                                                sessionTempState,
+                                                sessionFreqPState,
+                                                it,
+                                                sessionTopPState,
+                                                sessionIsTextSelectableState
+                                            )
+                                        )
+                                    },
+                                    isTextSelectable = sessionIsTextSelectableState,
+                                    onIsTextSelectableChange = {
+                                        sessionIsTextSelectableState = it
+                                        onUpdateCurrentSessionSettings(
+                                            sessionModelApiNameState, sessionSystemPromptState,
+                                            ModelSettings(
+                                                sessionTempState,
+                                                sessionFreqPState,
+                                                sessionAutoShowDialogState,
+                                                sessionTopPState,
+                                                it
+                                            )
+                                        )
+                                    },
+                                    modelDropdownExpanded = modelDropdownExpanded,
+                                    onModelDropdownExpandedChange = { modelDropdownExpanded = it }
                                 )
                             }
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                    OutlinedTextField(
-                        value = systemPromptInput,
-                        onValueChange = { if (it.length <= 6000) systemPromptInput = it },
-                        label = { Text("系统提示内容") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 100.dp, max = 200.dp)
-                            .padding(bottom = 8.dp),
-                        minLines = 3, maxLines = 8,
-                        placeholder = { Text(if (isGlobalSettingsMode) "输入全局默认系统提示..." else "输入当前会话的系统提示...") }
-                    )
-
-                    // UI 体验设置
-                    SwitchSettingItem(
-                        title = "自动显示实时回复框",
-                        descriptionOn = "新回复时会自动弹出。",
-                        descriptionOff = "新回复时默认隐藏。",
-                        checked = autoShowDialogState,
-                        onCheckedChange = { autoShowDialogState = it },
-                    )
-                    SwitchSettingItem(
-                        title = "启用消息文本选择",
-                        descriptionOn = "可以长按选择和复制消息文本。",
-                        descriptionOff = "消息文本不可选。",
-                        checked = isTextSelectableState,
-                        onCheckedChange = { isTextSelectableState = it },
-                    )
-                }
-
-                ExpandableSettingSection(
-                    title = "高级参数调整",
-                    initiallyExpanded = defaultExpansionState
-                ) {
-                    SettingSliderItem(
-                        label = "模型温度", value = temperatureState,
-                        valueRange = 0.0f..2.0f, steps = ((2.0f - 0.0f) / 0.1f).toInt() - 1,
-                        onValueChange = { temperatureState = it }, valueLabelFormat = "%.1f",
-                        description = "较低值更确定，较高值更具创造性。"
-                    )
-                    SettingSliderItem(
-                        label = "Top-P (核心采样)", value = topPState,
-                        valueRange = 0.01f..1.0f, steps = ((1.0f - 0.01f) / 0.01f).toInt() - 1,
-                        onValueChange = { topPState = it }, valueLabelFormat = "%.2f",
-                        description = "控制输出多样性，1.0 表示不限制。"
-                    )
-                    SettingSliderItem(
-                        label = "频率惩罚", value = frequencyPenaltyState,
-                        valueRange = -2.0f..2.0f, steps = ((2.0f - (-2.0f)) / 0.1f).toInt() - 1,
-                        onValueChange = { frequencyPenaltyState = it }, valueLabelFormat = "%.1f",
-                        description = "正值减少重复，负值鼓励重复。"
-                    )
-                }
-
-                if (!isGlobalSettingsMode) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        "注意：此处的更改将应用于当前打开的会话，并在您手动保存会话后持久化。",
-                        style = MaterialTheme.typography.bodySmall, fontStyle = FontStyle.Italic,
-                        textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()
-                    )
                 }
             }
         },
         confirmButton = {
             TextButton(onClick = {
-                val updatedModelSettings = ModelSettings(
-                    temperature = temperatureState,
-                    frequencyPenalty = frequencyPenaltyState,
-                    autoShowStreamingDialog = autoShowDialogState,
-                    topP = topPState,
-                    isTextSelectableInBubble = isTextSelectableState
-                )
-                if (isGlobalSettingsMode) {
+                if (pagerState.currentPage == 0) { // 如果当前是全局设置页
+                    val globalSettings = ModelSettings(
+                        temperature = globalTempState,
+                        frequencyPenalty = globalFreqPState,
+                        autoShowStreamingDialog = globalAutoShowDialogState,
+                        topP = globalTopPState,
+                        isTextSelectableInBubble = globalIsTextSelectableState
+                    )
                     onSaveGlobalDefaults(
-                        autoSaveOnSwitchState,
-                        autoVerifyResponseState,
-                        apiKeyInput,
-                        selectedModelApiNameState,
-                        systemPromptInput,
-                        updatedModelSettings
+                        globalAutoSaveState, globalAutoVerifyState, apiKeyInputState,
+                        globalModelApiNameState, globalSystemPromptState, globalSettings
                     )
-                } else {
-                    onSaveSessionSpecific(
-                        selectedModelApiNameState,
-                        systemPromptInput,
-                        updatedModelSettings
-                    )
+                } else { // 当前是会话设置页
+                    // 会话设置的更改通过 onUpdateCurrentSessionSettings 已实时反馈给 ChatScreen
+                    // 这里的“保存”按钮对于会话页可以只是关闭对话框，
+                    // 或者也可以触发一次 onUpdate (虽然可能重复，但确保最终状态)
+                    // 或者，会话页的更改应由ChatScreen的“保存会话”按钮持久化。
+                    // 为简单起见，这里的“保存”主要针对全局设置页。
+                    // 如果在会话页点击“保存”，我们假设更改已通过回调传递。
+                    if (hasActiveSession) { // 确保会话页存在
+                        val sessionSettings = ModelSettings(
+                            temperature = sessionTempState,
+                            frequencyPenalty = sessionFreqPState,
+                            autoShowStreamingDialog = sessionAutoShowDialogState,
+                            topP = sessionTopPState,
+                            isTextSelectableInBubble = sessionIsTextSelectableState
+                        )
+                        onUpdateCurrentSessionSettings( // 再次调用以确保同步
+                            sessionModelApiNameState,
+                            sessionSystemPromptState,
+                            sessionSettings
+                        )
+                        // 注意：会话设置的持久化应该由 ChatScreen 的“保存会话”按钮完成
+                        // 这个对话框的保存按钮主要是为了保存全局设置。
+                    }
                 }
                 onDismiss()
-            }) { Text("保存") }
+            }) { Text(if (pagerState.currentPage == 0 || !hasActiveSession) "保存全局" else "应用更改") } // 按钮文本根据页面变化
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = MaterialTheme.shapes.large
+    )
+}
+
+
+// --- 新建的页面 Composable ---
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun GlobalSettingsPage(
+    apiKey: String, onApiKeyChange: (String) -> Unit,
+    modelApiName: String, onModelApiNameChange: (String) -> Unit,
+    systemPrompt: String, onSystemPromptChange: (String) -> Unit,
+    autoSave: Boolean, onAutoSaveChange: (Boolean) -> Unit,
+    autoVerify: Boolean, onAutoVerifyChange: (Boolean) -> Unit,
+    temp: Float, onTempChange: (Float) -> Unit,
+    freqP: Float, onFreqPChange: (Float) -> Unit,
+    topP: Float, onTopPChange: (Float) -> Unit,
+    autoShowDialog: Boolean, onAutoShowDialogChange: (Boolean) -> Unit,
+    isTextSelectable: Boolean, onIsTextSelectableChange: (Boolean) -> Unit,
+    modelDropdownExpanded: Boolean, onModelDropdownExpandedChange: (Boolean) -> Unit
+) {
+    Column {
+        ExpandableSettingSection(title = "API 设置", initiallyExpanded = false) {
+            OutlinedTextField(
+                value = apiKey,
+                onValueChange = onApiKeyChange,
+                label = { Text("API 密钥 (全局)") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp, bottom = 8.dp),
+                singleLine = true,
+                placeholder = { Text("在此输入您的 API Key") }
+            )
+        }
+        ExpandableSettingSection(title = "应用行为", initiallyExpanded = false) {
+            SwitchSettingItem(
+                title = "离开当前聊天时自动保存",
+                descriptionOn = "切换/新建会话或退出应用时，将自动保存未保存的更改。",
+                descriptionOff = "离开当前聊天（切换/新建/退出）时，若有未保存更改将提示操作。",
+                checked = autoSave,
+                onCheckedChange = onAutoSaveChange
+            )
+            HorizontalDivider()
+            SwitchSettingItem(
+                title = "自动进行可靠性审查",
+                descriptionOn = "每次模型回复后将自动调用审查模型。",
+                descriptionOff = "模型回复后不自动进行审查。",
+                checked = autoVerify,
+                onCheckedChange = onAutoVerifyChange
+            )
+        }
+        ExpandableSettingSection(title = "默认模型与提示", initiallyExpanded = true) {
+            // ... (模型选择和系统提示的 UI，使用传入的 onXXXChange 回调)
+            DefaultModelAndPromptSettings(
+                modelApiName = modelApiName,
+                onModelApiNameChange = onModelApiNameChange,
+                systemPrompt = systemPrompt,
+                onSystemPromptChange = onSystemPromptChange,
+                autoShowDialog = autoShowDialog,
+                onAutoShowDialogChange = onAutoShowDialogChange,
+                isTextSelectable = isTextSelectable,
+                onIsTextSelectableChange = onIsTextSelectableChange,
+                modelDropdownExpanded = modelDropdownExpanded,
+                onModelDropdownExpandedChange = onModelDropdownExpandedChange
+            )
+        }
+        ExpandableSettingSection(title = "默认高级参数", initiallyExpanded = false) {
+            // ... (温度、TopP、频率惩罚的 SettingSliderItem，使用传入的 onXXXChange 回调)
+            DefaultAdvancedParamsSettings(
+                temp = temp, onTempChange = onTempChange,
+                topP = topP, onTopPChange = onTopPChange,
+                freqP = freqP, onFreqPChange = onFreqPChange
+            )
+        }
+        Text(
+            "这些是新会话的默认设置，或在没有特定会话设置时使用。",
+            style = MaterialTheme.typography.bodySmall, fontStyle = FontStyle.Italic,
+            textAlign = TextAlign.Center, modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 16.dp)
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SessionSettingsPage(
+    modelApiName: String, onModelApiNameChange: (String) -> Unit,
+    systemPrompt: String, onSystemPromptChange: (String) -> Unit,
+    temp: Float, onTempChange: (Float) -> Unit,
+    freqP: Float, onFreqPChange: (Float) -> Unit,
+    topP: Float, onTopPChange: (Float) -> Unit,
+    autoShowDialog: Boolean, onAutoShowDialogChange: (Boolean) -> Unit,
+    isTextSelectable: Boolean, onIsTextSelectableChange: (Boolean) -> Unit,
+    modelDropdownExpanded: Boolean, onModelDropdownExpandedChange: (Boolean) -> Unit
+) {
+    Column {
+        ExpandableSettingSection(title = "当前会话模型与提示", initiallyExpanded = true) {
+            // ... (与 GlobalSettingsPage 类似的 UI，但绑定的是会话特定状态和回调)
+            DefaultModelAndPromptSettings( // 复用 UI 结构
+                modelApiName = modelApiName,
+                onModelApiNameChange = onModelApiNameChange,
+                systemPrompt = systemPrompt,
+                onSystemPromptChange = onSystemPromptChange,
+                autoShowDialog = autoShowDialog,
+                onAutoShowDialogChange = onAutoShowDialogChange,
+                isTextSelectable = isTextSelectable,
+                onIsTextSelectableChange = onIsTextSelectableChange,
+                modelDropdownExpanded = modelDropdownExpanded,
+                onModelDropdownExpandedChange = onModelDropdownExpandedChange
+            )
+        }
+        ExpandableSettingSection(
+            title = "当前会话高级参数",
+            initiallyExpanded = false
+        ) { // 会话的高级参数默认展开
+            DefaultAdvancedParamsSettings( // 复用 UI 结构
+                temp = temp, onTempChange = onTempChange,
+                topP = topP, onTopPChange = onTopPChange,
+                freqP = freqP, onFreqPChange = onFreqPChange
+            )
+        }
+        Text(
+            "这些设置将应用于当前会话，并在您“保存会话”时持久化。",
+            style = MaterialTheme.typography.bodySmall, fontStyle = FontStyle.Italic,
+            textAlign = TextAlign.Center, modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 16.dp)
+        )
+    }
+}
+
+// --- 可复用的设置UI片段 ---
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DefaultModelAndPromptSettings(
+    modelApiName: String, onModelApiNameChange: (String) -> Unit,
+    systemPrompt: String, onSystemPromptChange: (String) -> Unit,
+    autoShowDialog: Boolean, onAutoShowDialogChange: (Boolean) -> Unit,
+    isTextSelectable: Boolean, onIsTextSelectableChange: (Boolean) -> Unit,
+    modelDropdownExpanded: Boolean, onModelDropdownExpandedChange: (Boolean) -> Unit // 传入状态和回调
+) {
+    Text(
+        "模型选择:",
+        style = MaterialTheme.typography.titleSmall,
+        modifier = Modifier.padding(top = 8.dp)
+    )
+    ExposedDropdownMenuBox(
+        expanded = modelDropdownExpanded, // 使用传入的状态
+        onExpandedChange = onModelDropdownExpandedChange, // 使用传入的回调
+        modifier = Modifier.padding(vertical = 4.dp)
+    ) {
+        OutlinedTextField(
+            value = availableModels.find { it.apiName == modelApiName }?.displayName ?: "选择模型",
+            onValueChange = {}, readOnly = true, label = { Text("当前模型") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelDropdownExpanded) },
+            modifier = Modifier
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                .fillMaxWidth(),
+        )
+        ExposedDropdownMenu(
+            expanded = modelDropdownExpanded,
+            onDismissRequest = { onModelDropdownExpandedChange(false) }) {
+            availableModels.forEach { model ->
+                DropdownMenuItem(text = { Text(model.displayName) }, onClick = {
+                    onModelApiNameChange(model.apiName)
+                    onModelDropdownExpandedChange(false)
+                })
+            }
+        }
+    }
+    Spacer(modifier = Modifier.height(16.dp))
+    OutlinedTextField(
+        value = systemPrompt,
+        onValueChange = onSystemPromptChange,
+        label = { Text("系统提示内容") },
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 100.dp, max = 200.dp)
+            .padding(bottom = 8.dp),
+        minLines = 3,
+        maxLines = 8
+    )
+    SwitchSettingItem(
+        title = "自动显示实时回复框",
+        descriptionOn = "新回复时会自动弹出。",
+        descriptionOff = "新回复时默认隐藏。",
+        checked = autoShowDialog,
+        onCheckedChange = onAutoShowDialogChange
+    )
+    SwitchSettingItem(
+        title = "启用消息文本选择",
+        descriptionOn = "可以长按选择和复制消息文本。",
+        descriptionOff = "消息文本不可选。",
+        checked = isTextSelectable,
+        onCheckedChange = onIsTextSelectableChange
+    )
+}
+
+@Composable
+fun DefaultAdvancedParamsSettings(
+    temp: Float, onTempChange: (Float) -> Unit,
+    topP: Float, onTopPChange: (Float) -> Unit,
+    freqP: Float, onFreqPChange: (Float) -> Unit
+) {
+    SettingSliderItem(
+        label = "模型温度", value = temp, valueRange = 0.0f..2.0f,
+        steps = ((2.0f - 0.0f) / 0.1f).toInt() - 1, onValueChange = onTempChange,
+        valueLabelFormat = "%.1f", description = "较低值更确定，较高值更具创造性。"
+    )
+    SettingSliderItem(
+        label = "Top-P (核心采样)", value = topP, valueRange = 0.01f..1.0f,
+        steps = ((1.0f - 0.01f) / 0.01f).toInt() - 1, onValueChange = onTopPChange,
+        valueLabelFormat = "%.2f", description = "控制输出多样性，1.0 表示不限制。"
+    )
+    SettingSliderItem(
+        label = "频率惩罚", value = freqP, valueRange = -2.0f..2.0f,
+        steps = ((2.0f - (-2.0f)) / 0.1f).toInt() - 1, onValueChange = onFreqPChange,
+        valueLabelFormat = "%.1f", description = "正值减少重复，负值鼓励重复。"
     )
 }
 

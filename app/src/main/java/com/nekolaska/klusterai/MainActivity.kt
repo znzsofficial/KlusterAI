@@ -1051,50 +1051,59 @@ fun ChatScreen() {
         }
     }
 
-    // --- Dialogs Rendering ---
     if (showSettingsDialog) {
         SettingsDialog(
-            isGlobalSettingsMode = currentSessionId == null, // 如果当前没有打开的会话，则为全局设置模式
-            currentApiKey = globalApiKey,
-            currentSelectedModelApiName = activeModelApiName,
-            currentSystemPrompt = activeSystemPrompt,
-            currentAutoSaveOnSwitch = autoSaveOnSwitchSessionGlobalPref, // 传递当前的全局偏好
-            currentAutoVerifyResponse = autoVerifyResponseGlobalPref, // 传递状态
-            currentModelSettings = activeModelSettings, // 传递 activeModelSettings
-            onSaveGlobalDefaults = { newAutoSavePref, newAutoVerify, newApiKey, newModel, newPrompt, newSettings ->
-                globalApiKey = newApiKey
-                globalDefaultModelApiName = newModel
-                globalDefaultSystemPrompt = newPrompt
-                globalDefaultModelSettings = newSettings // 保存全局默认模型设置
+            globalApiKey = globalApiKey,
+            globalDefaultModelApiName = globalDefaultModelApiName,
+            globalDefaultSystemPrompt = globalDefaultSystemPrompt,
+            globalDefaultModelSettings = globalDefaultModelSettings,
+            globalAutoSaveOnSwitch = autoSaveOnSwitchSessionGlobalPref,
+            globalAutoVerifyResponse = autoVerifyResponseGlobalPref,
 
-                autoSaveOnSwitchSessionGlobalPref = newAutoSavePref // 更新全局偏好状态
-                autoVerifyResponseGlobalPref = newAutoVerify
+            currentSessionModelApiName = if (currentSessionId != null) activeModelApiName else null,
+            currentSessionSystemPrompt = if (currentSessionId != null) activeSystemPrompt else null,
+            currentSessionModelSettings = if (currentSessionId != null) activeModelSettings else null,
 
-                SharedPreferencesUtils.apply {
-                    saveApiKey(context, newApiKey)
-                    saveSelectedModel(context, newModel)
-                    saveSystemPrompt(context, newPrompt)
-                    saveGlobalModelSettings(context, newSettings)
-                    saveAutoSaveOnSwitchPreference(context, newAutoSavePref) // 保存到 SP
-                    saveAutoVerifyPreference(context, newAutoVerify)
-                }
+            onSaveGlobalDefaults = { autoSave, autoVerify, apiKey, modelName, prompt, settings ->
+                // 更新 ChatScreen 中的全局状态
+                autoSaveOnSwitchSessionGlobalPref = autoSave
+                autoVerifyResponseGlobalPref = autoVerify
+                globalApiKey = apiKey
+                globalDefaultModelApiName = modelName
+                globalDefaultSystemPrompt = prompt
+                globalDefaultModelSettings = settings
+                // 持久化到 SharedPreferences
+                SharedPreferencesUtils.saveAutoSaveOnSwitchPreference(context, autoSave)
+                SharedPreferencesUtils.saveAutoVerifyPreference(context, autoVerify)
+                SharedPreferencesUtils.saveApiKey(context, apiKey)
+                SharedPreferencesUtils.saveSelectedModel(context, modelName)
+                SharedPreferencesUtils.saveSystemPrompt(context, prompt)
+                SharedPreferencesUtils.saveGlobalModelSettings(context, settings)
 
-                if (currentSessionId == null) { // 如果当前是新聊天，立即应用全局更改
-                    updateActiveSessionSettings(null)
+                // 如果当前没有活动会话，或者当前活动会话正在使用全局设置，则需要更新 activeXXX 状态
+                if (currentSessionId == null || (
+                            activeModelApiName == (allSessionMetas.find { it.id == currentSessionId }?.modelApiName ?: globalDefaultModelApiName) && // 检查是否之前用了全局的
+                                    activeSystemPrompt == (allSessionMetas.find { it.id == currentSessionId }?.systemPrompt ?: globalDefaultSystemPrompt) &&
+                                    activeModelSettings == (allSessionMetas.find { it.id == currentSessionId }?.modelSettings ?: globalDefaultModelSettings)
+                            )) {
+                    updateActiveSessionSettings(null) // 这会使 activeXXX 更新为新的全局默认值
                 }
                 Toast.makeText(context, "全局默认设置已保存", Toast.LENGTH_SHORT).show()
-                showSettingsDialog = false
             },
-            onSaveSessionSpecific = { newModel, newPrompt, newSettings ->
-                activeModelApiName = newModel
-                activeSystemPrompt = newPrompt
-                activeModelSettings = newSettings // 更新当前会话激活的模型设置
-                updateSystemMessageInHistory(conversationHistory, newPrompt)
-                markAsModified()
-                Toast.makeText(context, "当前会话设置已更新 (待保存)", Toast.LENGTH_SHORT).show()
-                showSettingsDialog = false
+            onUpdateCurrentSessionSettings = { modelName, prompt, settings ->
+                // 当用户在“当前会话”页更改设置时，立即更新 ChatScreen 的 active 状态
+                // 并标记会话已修改，等待用户在 ChatScreen 点击“保存会话”来持久化
+                if (currentSessionId != null) {
+                    activeModelApiName = modelName
+                    activeSystemPrompt = prompt
+                    activeModelSettings = settings
+                    updateSystemMessageInHistory(conversationHistory, prompt) // 更新聊天记录中的系统消息
+                    markAsModified()
+                    Toast.makeText(context, "当前会话设置已更改 (待保存)", Toast.LENGTH_SHORT).show()
+                }
             },
-            onDismiss = { showSettingsDialog = false }
+            onDismiss = { showSettingsDialog = false },
+            hasActiveSession = currentSessionId != null
         )
     }
 
