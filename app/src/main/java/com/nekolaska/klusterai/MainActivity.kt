@@ -34,10 +34,12 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.nekolaska.klusterai.data.ApiRequestBody
 import com.nekolaska.klusterai.data.ApiRequestMessage
+import com.nekolaska.klusterai.data.ConfirmDialogState
 import com.nekolaska.klusterai.data.DEFAULT_MODEL_API_NAME
 import com.nekolaska.klusterai.data.MessageData
 import com.nekolaska.klusterai.data.ModelSettings
 import com.nekolaska.klusterai.data.VerificationResult
+import com.nekolaska.klusterai.ui.components.AssistantLoadingIndicatorBar
 import com.nekolaska.klusterai.ui.components.ConfirmActionDialog
 import com.nekolaska.klusterai.ui.components.EditMessageDialog
 import com.nekolaska.klusterai.ui.components.ErrorMessageDisplay
@@ -48,6 +50,7 @@ import com.nekolaska.klusterai.ui.components.SaveSessionDialog
 import com.nekolaska.klusterai.ui.components.SessionListDialog
 import com.nekolaska.klusterai.ui.components.SettingsDialog
 import com.nekolaska.klusterai.ui.components.StreamingResponseDialog
+import com.nekolaska.klusterai.ui.components.VerificationInProgressIndicator
 import com.nekolaska.klusterai.ui.theme.KlusterAITheme
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -95,6 +98,7 @@ fun ChatScreen() {
     val coroutineScope = rememberCoroutineScope()
     var currentApiCallJob by remember { mutableStateOf<Job?>(null) } // 用于追踪当前的API调用Job
 
+    var triggerRefresh by remember { mutableStateOf(false) } // 用于刷新会话列表
     // --- 全局状态 ---
     var autoSaveOnSwitchSessionGlobalPref by remember { //全局自动保存偏好
         mutableStateOf(SharedPreferencesUtils.loadAutoSaveOnSwitchPreference(context))
@@ -152,11 +156,10 @@ fun ChatScreen() {
     var showEditMessageDialog by remember { mutableStateOf(false) }
 
     // 用于通用确认对话框的状态
-    data class ConfirmDialogState(val title: String, val text: String, val onConfirm: () -> Unit)
-
     var confirmDialogState by remember { mutableStateOf<ConfirmDialogState?>(null) }
 
     val allSessionMetas = remember { mutableStateListOf<SessionMeta>() }
+
 
     // --- 辅助函数 ---
     fun markAsModified(modified: Boolean = true) {
@@ -198,7 +201,6 @@ fun ChatScreen() {
     }
 
     fun handleSaveCurrentChatAndThen(title: String, andThenAction: (() -> Unit)? = null) {
-        // ... (原 handleSaveSession 逻辑)
         val sessionIdToSave = currentSessionId ?: ChatSessionRepository.generateNewSessionId()
         val newMeta = SessionMeta(
             id = sessionIdToSave,
@@ -334,13 +336,23 @@ fun ChatScreen() {
 
 
     // --- 初始化加载 ---
-    LaunchedEffect(Unit) {
+    LaunchedEffect(Unit, triggerRefresh) { // 当 triggerRefresh 变化时重新加载
+        //Log.d("ChatScreen", "Refreshing session metas due to Unit or triggerRefresh change.")
+        allSessionMetas.clear()
         allSessionMetas.addAll(ChatSessionRepository.loadSessionMetas(context))
-        if (allSessionMetas.isNotEmpty()) {
-            loadSession(allSessionMetas.first().id) // 默认加载最新的
-        } else {
-            prepareNewChat() // 没有会话则开始新聊天
+        if (allSessionMetas.isNotEmpty() && currentSessionId == null) {
+            loadSession(allSessionMetas.first().id)
+        } else if (currentSessionId != null && allSessionMetas.none { it.id == currentSessionId }) {
+            prepareNewChat()
+        } else if (currentSessionId != null) {
+            // 如果当前会话ID仍然有效，确保其信息是最新的（例如标题可能在导入时被修改为副本）
+            // loadSession(currentSessionId!!) // 可能会导致不必要的重新加载，除非确保数据已变
+            // 更好的方式是直接从 allSessionMetas 更新 currentSessionTitleInput
+            allSessionMetas.find { it.id == currentSessionId }?.let {
+                currentSessionTitleInput = TextFieldValue(it.title)
+            }
         }
+        //Log.d("ChatScreen", "Session metas refreshed. Count: ${allSessionMetas.size}")
     }
 
     // --- 生命周期事件处理：退出时自动保存 ---
@@ -535,7 +547,11 @@ fun ChatScreen() {
             )
             // 决定插入位置，通常是追加
             // 注意：此时 assistantMessageDraft 可能为 null，我们使用 streamingContent.value
-            processAndDisplayFinalResponse(partialMessage, null, null) // 使用 null 作为 insertionIndex 来追加
+            processAndDisplayFinalResponse(
+                partialMessage,
+                null,
+                null
+            ) // 使用 null 作为 insertionIndex 来追加
             markAsModified() // 标记有更改
             Toast.makeText(context, "回复已中断，部分内容可能已保存。", Toast.LENGTH_LONG).show()
         } else if (isCancelledByUser) { // 用户手动中断但没有收到任何内容
@@ -615,7 +631,7 @@ fun ChatScreen() {
                         )
                         operationCompletedSuccessfully = true // 视作一种完成，即使 fullResponse 为空
                     } else {
-                        if(isActive) errorMessage = "从API收到空响应或无效响应。"
+                        if (isActive) errorMessage = "从API收到空响应或无效响应。"
                         // operationCompletedSuccessfully 保持 false
                     }
                 }
@@ -636,9 +652,14 @@ fun ChatScreen() {
                 if (operationCompletedSuccessfully && assistantMessageDraft != null) {
                     // 正常完成，走审查流程或直接显示
                     if (autoVerifyResponseGlobalPref) {
-                        val contextForVerification = actualHistory.toMutableList().apply { add(assistantMessageDraft) }
+                        val contextForVerification =
+                            actualHistory.toMutableList().apply { add(assistantMessageDraft) }
                         lastAssistantMessageIdForVerification = assistantMessageDraft.id
-                        triggerVerification(contextForVerification, assistantMessageDraft, insertionIndex)
+                        triggerVerification(
+                            contextForVerification,
+                            assistantMessageDraft,
+                            insertionIndex
+                        )
                     } else {
                         processAndDisplayFinalResponse(assistantMessageDraft, null, insertionIndex)
                     }
@@ -670,7 +691,7 @@ fun ChatScreen() {
                     // 失败且没有流式内容（或者流式内容为空）
                     //Log.e("LLMRequest", "主LLM未能生成有效回复或流式内容为空。")
                     if (errorMessage == null && isActive) { // 如果没有特定错误信息，给一个通用提示
-                         errorMessage = "未能获取回复。" // 这个可能过于笼统
+                        errorMessage = "未能获取回复。" // 这个可能过于笼统
                     }
                 }
             }
@@ -776,19 +797,7 @@ fun ChatScreen() {
         bottomBar = {
             Column {
                 if (isLoading && !showStreamingDialog) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("助手正在回复...", style = MaterialTheme.typography.bodySmall)
-                        TextButton(onClick = {
-                            showStreamingDialog = true
-                        }) { Text("显示实时回复") }
-                    }
+                    AssistantLoadingIndicatorBar { showStreamingDialog = true }
                 }
                 InputRow(
                     userInput = userInput,
@@ -816,20 +825,7 @@ fun ChatScreen() {
                 .padding(paddingValues)
         ) {
             // 审查进行中提示条
-            if (showVerificationInProgress) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f))
-                        .padding(8.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("正在进行可靠性审查...", style = MaterialTheme.typography.bodySmall)
-                }
-            }
+            if (showVerificationInProgress) VerificationInProgressIndicator()
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -956,7 +952,11 @@ fun ChatScreen() {
                 }
             },
             onDismiss = { showSettingsDialog = false },
-            hasActiveSession = currentSessionId != null
+            hasActiveSession = currentSessionId != null,
+            onChatHistoryImportedParent = {
+                triggerRefresh = !triggerRefresh // 触发会话列表刷新
+                // onDismiss() // 导入成功后可以选择是否立即关闭对话框
+            },
         )
     }
 

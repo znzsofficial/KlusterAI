@@ -96,7 +96,7 @@ object ChatSessionRepository {
     }
 
     // --- 会话消息操作 ---
-    private fun getChatHistoryDir(context: Context): File {
+    fun getChatHistoryDir(context: Context): File {
         val dir = File(context.filesDir, CHAT_HISTORY_DIR)
         if (!dir.exists()) {
             dir.mkdirs()

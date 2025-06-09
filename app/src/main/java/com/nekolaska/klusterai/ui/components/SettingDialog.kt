@@ -1,5 +1,9 @@
 package com.nekolaska.klusterai.ui.components
 
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
@@ -50,11 +54,17 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.pager.HorizontalPager // 导入 Pager
 import androidx.compose.foundation.pager.rememberPagerState // 导入 PagerState
+import androidx.compose.material3.Button
 import androidx.compose.material3.Tab // 导入 Tab
 import androidx.compose.material3.TabRow // 导入 TabRow
 import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
+import androidx.compose.ui.platform.LocalContext
+import com.nekolaska.klusterai.BackupRestoreManager
+import com.nekolaska.klusterai.ImportConflictStrategy
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
 
 
 @OptIn(
@@ -91,7 +101,8 @@ fun SettingsDialog(
         modelApiName: String, systemPrompt: String, modelSettings: ModelSettings
     ) -> Unit,
     onDismiss: () -> Unit,
-    hasActiveSession: Boolean // 标记是否有活动会话，用于启用/禁用“当前会话”Tab
+    hasActiveSession: Boolean, // 标记是否有活动会话，用于启用/禁用“当前会话”Tab
+    onChatHistoryImportedParent: () -> Unit,
 ) {
     val pagerState =
         rememberPagerState(pageCount = { if (hasActiveSession) 2 else 1 }) // 如果没有活动会话，只有全局页
@@ -187,7 +198,6 @@ fun SettingsDialog(
         )
     }
 
-
     var modelDropdownExpanded by remember { mutableStateOf(false) }
 
 
@@ -260,6 +270,7 @@ fun SettingsDialog(
                         when (pageIndex) {
                             0 -> { // 全局默认设置页
                                 GlobalSettingsPage(
+                                    onChatHistoryImported = onChatHistoryImportedParent,
                                     apiKey = apiKeyInputState,
                                     onApiKeyChange = { apiKeyInputState = it },
                                     modelApiName = globalModelApiNameState,
@@ -457,8 +468,47 @@ fun GlobalSettingsPage(
     topP: Float, onTopPChange: (Float) -> Unit,
     autoShowDialog: Boolean, onAutoShowDialogChange: (Boolean) -> Unit,
     isTextSelectable: Boolean, onIsTextSelectableChange: (Boolean) -> Unit,
-    modelDropdownExpanded: Boolean, onModelDropdownExpandedChange: (Boolean) -> Unit
+    modelDropdownExpanded: Boolean, onModelDropdownExpandedChange: (Boolean) -> Unit,
+    // 新增回调，用于在导入成功后通知 ChatScreen 刷新
+    onChatHistoryImported: () -> Unit
 ) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+
+    // --- 文件选择器启动器 ---
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/zip"),
+        onResult = { uri: Uri? ->
+            uri?.let {
+                coroutineScope.launch {
+                    val success = BackupRestoreManager.exportChatHistory(context, it)
+                    if (success) {
+                        Toast.makeText(context, "导出成功!", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "导出失败。", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    )
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+        onResult = { uri: Uri? ->
+            uri?.let {
+                coroutineScope.launch {
+                    // 为简单起见，使用默认的 CREATE_COPY 策略，你可以后续添加选择对话框
+                    val success = BackupRestoreManager.importChatHistory(context, it, ImportConflictStrategy.CREATE_COPY)
+                    if (success) {
+                        Toast.makeText(context, "导入成功! 会话列表将刷新。", Toast.LENGTH_LONG).show()
+                        onChatHistoryImported() // 通知 ChatScreen 刷新
+                    } else {
+                        Toast.makeText(context, "导入失败。", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    )
+
     Column {
         ExpandableSettingSection(title = "API 设置", initiallyExpanded = false) {
             OutlinedTextField(
@@ -472,9 +522,33 @@ fun GlobalSettingsPage(
                 placeholder = { Text("在此输入您的 API Key") }
             )
         }
+        ExpandableSettingSection(title = "数据管理", initiallyExpanded = false) {
+            Button(
+                onClick = {
+                    // 生成默认文件名，例如 KlusterAIChats_YYYYMMDD_HHMM.zip
+                    val sdf = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault())
+                    val timestamp = sdf.format(Date())
+                    exportLauncher.launch("KlusterAIChats_Backup_$timestamp.zip")
+                },
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+            ) {
+                Text("导出所有聊天记录")
+            }
+            Button(
+                onClick = { importLauncher.launch("application/zip") }, // 限制文件类型为ZIP
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+            ) {
+                Text("导入聊天记录")
+            }
+            Text(
+                "导入会话时，如果会话ID已存在，将创建副本。导入后可能需要重启应用或刷新列表。",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
+            )
+        }
         ExpandableSettingSection(title = "应用行为", initiallyExpanded = false) {
             SwitchSettingItem(
-                title = "离开当前聊天时自动保存",
+                title = "自动保存",
                 descriptionOn = "切换/新建会话或退出应用时，将自动保存未保存的更改。",
                 descriptionOff = "离开当前聊天（切换/新建/退出）时，若有未保存更改将提示操作。",
                 checked = autoSave,
@@ -482,7 +556,7 @@ fun GlobalSettingsPage(
             )
             HorizontalDivider()
             SwitchSettingItem(
-                title = "自动进行可靠性审查",
+                title = "可靠性审查",
                 descriptionOn = "每次模型回复后将自动调用审查模型。",
                 descriptionOff = "模型回复后不自动进行审查。",
                 checked = autoVerify,
