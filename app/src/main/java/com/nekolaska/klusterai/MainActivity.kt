@@ -104,6 +104,12 @@ fun ChatScreen() {
     var autoVerifyResponseGlobalPref by remember { // 全局自动审查偏好
         mutableStateOf(SharedPreferencesUtils.loadAutoVerifyPreference(context))
     }
+    var globalAutoShowStreamingDialogPref by remember { // 全局偏好
+        mutableStateOf(SharedPreferencesUtils.loadGlobalAutoShowStreamingDialog(context))
+    }
+    var globalIsTextSelectablePref by remember { // 全局偏好
+        mutableStateOf(SharedPreferencesUtils.loadGlobalIsTextSelectable(context))
+    }
 
     var globalApiKey by remember {
         mutableStateOf(SharedPreferencesUtils.loadApiKey(context, DEFAULT_API_KEY_FALLBACK))
@@ -453,11 +459,11 @@ fun ChatScreen() {
         coroutineScope.launch {
             var completeJsonResponseFromApi: String?
             try {
-                val verificationSettings = ModelSettings.DEFAULT.copy(
-                    temperature = 0.1f,
-                    topP = 0.1f,
-                    autoShowStreamingDialog = false // 审查模型调用不应触发流式对话框
-                )
+                val verificationSettings = ModelSettings.DEFAULT
+//                    .copy(
+//                    temperature = 0.1f,
+//                    topP = 0.1f,
+//                )
 
                 completeJsonResponseFromApi = callLLMApi( // 使用现有的 callLLMApi
                     apiKey = globalApiKey,
@@ -586,7 +592,7 @@ fun ChatScreen() {
         isLoading = true
         streamingContent.value = ""
         // 根据设置决定是否立即显示流式对话框
-        showStreamingDialog = activeModelSettings.autoShowStreamingDialog
+        showStreamingDialog = globalAutoShowStreamingDialogPref
         // 清理上一次的审查状态，因为我们要获取新回复
         lastAssistantMessageIdForVerification = null
         verificationResultForLastMessage = null
@@ -843,7 +849,7 @@ fun ChatScreen() {
                         }
                     MessageBubble(
                         message = message,
-                        isContentSelectable = activeModelSettings.isTextSelectableInBubble,
+                        isContentSelectable = globalIsTextSelectablePref,
                         verificationResult = if (message.role == "assistant") currentVerification else null,
                         onCopyFeedbackAndEdit = { _, feedback -> // originalQuery暂时为空，下面处理
                             // 找到这条助手消息之前的最近一条用户消息
@@ -902,26 +908,35 @@ fun ChatScreen() {
             globalDefaultModelSettings = globalDefaultModelSettings,
             globalAutoSaveOnSwitch = autoSaveOnSwitchSessionGlobalPref,
             globalAutoVerifyResponse = autoVerifyResponseGlobalPref,
+            globalAutoShowStreamingDialogPref = globalAutoShowStreamingDialogPref,
+            globalIsTextSelectablePref = globalIsTextSelectablePref,
 
             currentSessionModelApiName = if (currentSessionId != null) activeModelApiName else null,
             currentSessionSystemPrompt = if (currentSessionId != null) activeSystemPrompt else null,
             currentSessionModelSettings = if (currentSessionId != null) activeModelSettings else null,
 
-            onSaveGlobalDefaults = { autoSave, autoVerify, apiKey, modelName, prompt, settings ->
+            onSaveGlobalDefaults = { autoSave, autoVerify, autoShow, selectable, apiKey, modelName, prompt, settings ->
                 // 更新 ChatScreen 中的全局状态
                 autoSaveOnSwitchSessionGlobalPref = autoSave
                 autoVerifyResponseGlobalPref = autoVerify
+                globalAutoShowStreamingDialogPref = autoShow
+                globalIsTextSelectablePref = selectable
                 globalApiKey = apiKey
                 globalDefaultModelApiName = modelName
                 globalDefaultSystemPrompt = prompt
                 globalDefaultModelSettings = settings
+
                 // 持久化到 SharedPreferences
-                SharedPreferencesUtils.saveAutoSaveOnSwitchPreference(context, autoSave)
-                SharedPreferencesUtils.saveAutoVerifyPreference(context, autoVerify)
-                SharedPreferencesUtils.saveApiKey(context, apiKey)
-                SharedPreferencesUtils.saveSelectedModel(context, modelName)
-                SharedPreferencesUtils.saveSystemPrompt(context, prompt)
-                SharedPreferencesUtils.saveGlobalModelSettings(context, settings)
+                SharedPreferencesUtils.apply{
+                    saveAutoSaveOnSwitchPreference(context, autoSave)
+                    saveAutoVerifyPreference(context, autoVerify)
+                    saveGlobalAutoShowStreamingDialog(context, autoShow)
+                    saveGlobalIsTextSelectable(context, selectable)
+                    saveApiKey(context, apiKey)
+                    saveSelectedModel(context, modelName)
+                    saveSystemPrompt(context, prompt)
+                    saveGlobalModelSettings(context, settings)
+                }
 
                 // 如果当前没有活动会话，或者当前活动会话正在使用全局设置，则需要更新 activeXXX 状态
                 if (currentSessionId == null || (

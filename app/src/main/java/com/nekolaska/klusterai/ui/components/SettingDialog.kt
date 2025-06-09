@@ -86,6 +86,8 @@ fun SettingsDialog(
     globalDefaultModelSettings: ModelSettings,
     globalAutoSaveOnSwitch: Boolean,
     globalAutoVerifyResponse: Boolean,
+    globalAutoShowStreamingDialogPref: Boolean, // 用于全局的 autoShow
+    globalIsTextSelectablePref: Boolean,    // 用于全局的 textSelectable
 
     // 当前会话的值 (如果存在)
     currentSessionModelApiName: String?, // 可空，表示没有活动会话或使用全局
@@ -94,8 +96,9 @@ fun SettingsDialog(
 
     // 回调
     onSaveGlobalDefaults: (
-        autoSave: Boolean, autoVerify: Boolean, apiKey: String,
-        modelApiName: String, systemPrompt: String, modelSettings: ModelSettings
+        autoSave: Boolean, autoVerify: Boolean,
+        autoShowStreaming: Boolean, isTextSelectable: Boolean,
+        apiKey: String, modelApiName: String, systemPrompt: String, modelSettings: ModelSettings
     ) -> Unit,
     onUpdateCurrentSessionSettings: ( // 当用户在“当前会话”页修改时，立即更新 ChatScreen 中的 activeXXX 状态
         modelApiName: String, systemPrompt: String, modelSettings: ModelSettings
@@ -131,6 +134,16 @@ fun SettingsDialog(
             globalAutoVerifyResponse
         )
     }
+    var globalAutoShowDialogState by remember(globalAutoShowStreamingDialogPref) {
+        mutableStateOf(
+            globalAutoShowStreamingDialogPref
+        )
+    }
+    var globalIsTextSelectableState by remember(globalIsTextSelectablePref) {
+        mutableStateOf(
+            globalIsTextSelectablePref
+        )
+    }
     var globalTempState by remember(globalDefaultModelSettings.temperature) {
         mutableFloatStateOf(
             globalDefaultModelSettings.temperature
@@ -144,16 +157,6 @@ fun SettingsDialog(
     var globalTopPState by remember(globalDefaultModelSettings.topP) {
         mutableFloatStateOf(
             globalDefaultModelSettings.topP
-        )
-    }
-    var globalAutoShowDialogState by remember(globalDefaultModelSettings.autoShowStreamingDialog) {
-        mutableStateOf(
-            globalDefaultModelSettings.autoShowStreamingDialog
-        )
-    }
-    var globalIsTextSelectableState by remember(globalDefaultModelSettings.isTextSelectableInBubble) {
-        mutableStateOf(
-            globalDefaultModelSettings.isTextSelectableInBubble
         )
     }
 
@@ -185,16 +188,6 @@ fun SettingsDialog(
     var sessionTopPState by remember(initialSessionSettings.topP) {
         mutableFloatStateOf(
             initialSessionSettings.topP
-        )
-    }
-    var sessionAutoShowDialogState by remember(initialSessionSettings.autoShowStreamingDialog) {
-        mutableStateOf(
-            initialSessionSettings.autoShowStreamingDialog
-        )
-    }
-    var sessionIsTextSelectableState by remember(initialSessionSettings.isTextSelectableInBubble) {
-        mutableStateOf(
-            initialSessionSettings.isTextSelectableInBubble
         )
     }
 
@@ -307,9 +300,7 @@ fun SettingsDialog(
                                             ModelSettings(
                                                 sessionTempState,
                                                 sessionFreqPState,
-                                                sessionAutoShowDialogState,
                                                 sessionTopPState,
-                                                sessionIsTextSelectableState
                                             )
                                         )
                                     },
@@ -321,9 +312,7 @@ fun SettingsDialog(
                                             ModelSettings(
                                                 sessionTempState,
                                                 sessionFreqPState,
-                                                sessionAutoShowDialogState,
                                                 sessionTopPState,
-                                                sessionIsTextSelectableState
                                             )
                                         )
                                     },
@@ -335,9 +324,7 @@ fun SettingsDialog(
                                             ModelSettings(
                                                 it,
                                                 sessionFreqPState,
-                                                sessionAutoShowDialogState,
                                                 sessionTopPState,
-                                                sessionIsTextSelectableState
                                             )
                                         )
                                     },
@@ -349,9 +336,7 @@ fun SettingsDialog(
                                             ModelSettings(
                                                 sessionTempState,
                                                 it,
-                                                sessionAutoShowDialogState,
                                                 sessionTopPState,
-                                                sessionIsTextSelectableState
                                             )
                                         )
                                     },
@@ -363,42 +348,12 @@ fun SettingsDialog(
                                             ModelSettings(
                                                 sessionTempState,
                                                 sessionFreqPState,
-                                                sessionAutoShowDialogState,
                                                 it,
-                                                sessionIsTextSelectableState
-                                            )
-                                        )
-                                    },
-                                    autoShowDialog = sessionAutoShowDialogState,
-                                    onAutoShowDialogChange = {
-                                        sessionAutoShowDialogState = it
-                                        onUpdateCurrentSessionSettings(
-                                            sessionModelApiNameState, sessionSystemPromptState,
-                                            ModelSettings(
-                                                sessionTempState,
-                                                sessionFreqPState,
-                                                it,
-                                                sessionTopPState,
-                                                sessionIsTextSelectableState
-                                            )
-                                        )
-                                    },
-                                    isTextSelectable = sessionIsTextSelectableState,
-                                    onIsTextSelectableChange = {
-                                        sessionIsTextSelectableState = it
-                                        onUpdateCurrentSessionSettings(
-                                            sessionModelApiNameState, sessionSystemPromptState,
-                                            ModelSettings(
-                                                sessionTempState,
-                                                sessionFreqPState,
-                                                sessionAutoShowDialogState,
-                                                sessionTopPState,
-                                                it
                                             )
                                         )
                                     },
                                     modelDropdownExpanded = modelDropdownExpanded,
-                                    onModelDropdownExpandedChange = { modelDropdownExpanded = it }
+                                    onModelDropdownExpandedChange = { modelDropdownExpanded = it },
                                 )
                             }
                         }
@@ -412,12 +367,12 @@ fun SettingsDialog(
                     val globalSettings = ModelSettings(
                         temperature = globalTempState,
                         frequencyPenalty = globalFreqPState,
-                        autoShowStreamingDialog = globalAutoShowDialogState,
                         topP = globalTopPState,
-                        isTextSelectableInBubble = globalIsTextSelectableState
                     )
                     onSaveGlobalDefaults(
-                        globalAutoSaveState, globalAutoVerifyState, apiKeyInputState,
+                        globalAutoSaveState, globalAutoVerifyState,
+                        globalAutoShowDialogState, globalIsTextSelectableState, // 传递新的全局偏好
+                        apiKeyInputState,
                         globalModelApiNameState, globalSystemPromptState, globalSettings
                     )
                 } else { // 当前是会话设置页
@@ -431,9 +386,7 @@ fun SettingsDialog(
                         val sessionSettings = ModelSettings(
                             temperature = sessionTempState,
                             frequencyPenalty = sessionFreqPState,
-                            autoShowStreamingDialog = sessionAutoShowDialogState,
                             topP = sessionTopPState,
-                            isTextSelectableInBubble = sessionIsTextSelectableState
                         )
                         onUpdateCurrentSessionSettings( // 再次调用以确保同步
                             sessionModelApiNameState,
@@ -469,7 +422,7 @@ fun GlobalSettingsPage(
     autoShowDialog: Boolean, onAutoShowDialogChange: (Boolean) -> Unit,
     isTextSelectable: Boolean, onIsTextSelectableChange: (Boolean) -> Unit,
     modelDropdownExpanded: Boolean, onModelDropdownExpandedChange: (Boolean) -> Unit,
-    // 新增回调，用于在导入成功后通知 ChatScreen 刷新
+    // 回调，用于在导入成功后通知 ChatScreen 刷新
     onChatHistoryImported: () -> Unit
 ) {
     val context = LocalContext.current
@@ -497,9 +450,14 @@ fun GlobalSettingsPage(
             uri?.let {
                 coroutineScope.launch {
                     // 为简单起见，使用默认的 CREATE_COPY 策略，你可以后续添加选择对话框
-                    val success = BackupRestoreManager.importChatHistory(context, it, ImportConflictStrategy.CREATE_COPY)
+                    val success = BackupRestoreManager.importChatHistory(
+                        context,
+                        it,
+                        ImportConflictStrategy.CREATE_COPY
+                    )
                     if (success) {
-                        Toast.makeText(context, "导入成功! 会话列表将刷新。", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "导入成功! 会话列表将刷新。", Toast.LENGTH_LONG)
+                            .show()
                         onChatHistoryImported() // 通知 ChatScreen 刷新
                     } else {
                         Toast.makeText(context, "导入失败。", Toast.LENGTH_SHORT).show()
@@ -530,13 +488,17 @@ fun GlobalSettingsPage(
                     val timestamp = sdf.format(Date())
                     exportLauncher.launch("KlusterAIChats_Backup_$timestamp.zip")
                 },
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
             ) {
                 Text("导出所有聊天记录")
             }
             Button(
                 onClick = { importLauncher.launch("application/zip") }, // 限制文件类型为ZIP
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
             ) {
                 Text("导入聊天记录")
             }
@@ -563,6 +525,22 @@ fun GlobalSettingsPage(
                 onCheckedChange = onAutoVerifyChange
             )
         }
+        ExpandableSettingSection(title = "界面体验", initiallyExpanded = false) {
+            SwitchSettingItem(
+                title = "自动显示实时回复框",
+                descriptionOn = "新回复时会自动弹出。",
+                descriptionOff = "新回复时默认隐藏。",
+                checked = autoShowDialog,
+                onCheckedChange = onAutoShowDialogChange
+            )
+            SwitchSettingItem(
+                title = "启用消息文本选择",
+                descriptionOn = "可以长按选择和复制消息文本。",
+                descriptionOff = "消息文本不可选。",
+                checked = isTextSelectable,
+                onCheckedChange = onIsTextSelectableChange
+            )
+        }
         ExpandableSettingSection(title = "默认模型与提示", initiallyExpanded = false) {
             // ... (模型选择和系统提示的 UI，使用传入的 onXXXChange 回调)
             DefaultModelAndPromptSettings(
@@ -570,10 +548,6 @@ fun GlobalSettingsPage(
                 onModelApiNameChange = onModelApiNameChange,
                 systemPrompt = systemPrompt,
                 onSystemPromptChange = onSystemPromptChange,
-                autoShowDialog = autoShowDialog,
-                onAutoShowDialogChange = onAutoShowDialogChange,
-                isTextSelectable = isTextSelectable,
-                onIsTextSelectableChange = onIsTextSelectableChange,
                 modelDropdownExpanded = modelDropdownExpanded,
                 onModelDropdownExpandedChange = onModelDropdownExpandedChange
             )
@@ -604,28 +578,22 @@ fun SessionSettingsPage(
     temp: Float, onTempChange: (Float) -> Unit,
     freqP: Float, onFreqPChange: (Float) -> Unit,
     topP: Float, onTopPChange: (Float) -> Unit,
-    autoShowDialog: Boolean, onAutoShowDialogChange: (Boolean) -> Unit,
-    isTextSelectable: Boolean, onIsTextSelectableChange: (Boolean) -> Unit,
     modelDropdownExpanded: Boolean, onModelDropdownExpandedChange: (Boolean) -> Unit
 ) {
     Column {
-        ExpandableSettingSection(title = "当前会话模型与提示", initiallyExpanded = true) {
+        ExpandableSettingSection(title = "模型与提示", initiallyExpanded = true) {
             // ... (与 GlobalSettingsPage 类似的 UI，但绑定的是会话特定状态和回调)
             DefaultModelAndPromptSettings( // 复用 UI 结构
                 modelApiName = modelApiName,
                 onModelApiNameChange = onModelApiNameChange,
                 systemPrompt = systemPrompt,
                 onSystemPromptChange = onSystemPromptChange,
-                autoShowDialog = autoShowDialog,
-                onAutoShowDialogChange = onAutoShowDialogChange,
-                isTextSelectable = isTextSelectable,
-                onIsTextSelectableChange = onIsTextSelectableChange,
                 modelDropdownExpanded = modelDropdownExpanded,
                 onModelDropdownExpandedChange = onModelDropdownExpandedChange
             )
         }
         ExpandableSettingSection(
-            title = "当前会话高级参数",
+            title = "高级参数",
             initiallyExpanded = false
         ) { // 会话的高级参数默认展开
             DefaultAdvancedParamsSettings( // 复用 UI 结构
@@ -650,8 +618,6 @@ fun SessionSettingsPage(
 fun DefaultModelAndPromptSettings(
     modelApiName: String, onModelApiNameChange: (String) -> Unit,
     systemPrompt: String, onSystemPromptChange: (String) -> Unit,
-    autoShowDialog: Boolean, onAutoShowDialogChange: (Boolean) -> Unit,
-    isTextSelectable: Boolean, onIsTextSelectableChange: (Boolean) -> Unit,
     modelDropdownExpanded: Boolean, onModelDropdownExpandedChange: (Boolean) -> Unit // 传入状态和回调
 ) {
     Text(
@@ -694,20 +660,6 @@ fun DefaultModelAndPromptSettings(
             .padding(bottom = 8.dp),
         minLines = 3,
         maxLines = 8
-    )
-    SwitchSettingItem(
-        title = "自动显示实时回复框",
-        descriptionOn = "新回复时会自动弹出。",
-        descriptionOff = "新回复时默认隐藏。",
-        checked = autoShowDialog,
-        onCheckedChange = onAutoShowDialogChange
-    )
-    SwitchSettingItem(
-        title = "启用消息文本选择",
-        descriptionOn = "可以长按选择和复制消息文本。",
-        descriptionOff = "消息文本不可选。",
-        checked = isTextSelectable,
-        onCheckedChange = onIsTextSelectableChange
     )
 }
 
