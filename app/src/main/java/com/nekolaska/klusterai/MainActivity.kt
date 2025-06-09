@@ -927,7 +927,7 @@ fun ChatScreen() {
                 globalDefaultModelSettings = settings
 
                 // 持久化到 SharedPreferences
-                SharedPreferencesUtils.apply{
+                SharedPreferencesUtils.apply {
                     saveAutoSaveOnSwitchPreference(context, autoSave)
                     saveAutoVerifyPreference(context, autoVerify)
                     saveGlobalAutoShowStreamingDialog(context, autoShow)
