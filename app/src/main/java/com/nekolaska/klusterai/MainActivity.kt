@@ -38,6 +38,7 @@ import com.nekolaska.klusterai.data.DEFAULT_MODEL_API_NAME
 import com.nekolaska.klusterai.data.MessageData
 import com.nekolaska.klusterai.data.ModelSettings
 import com.nekolaska.klusterai.data.VerificationResult
+import com.nekolaska.klusterai.ui.components.ConfirmActionDialog
 import com.nekolaska.klusterai.ui.components.EditMessageDialog
 import com.nekolaska.klusterai.ui.components.ErrorMessageDisplay
 import com.nekolaska.klusterai.ui.components.InputRow
@@ -78,22 +79,6 @@ private val jsonRequestBuilder = Json {
     encodeDefaults = false // 重要：如果属性值等于其默认值，则不序列化。
     ignoreUnknownKeys = true // 解析响应时仍然有用（虽然这里主要用于序列化）
     isLenient = true         // 增加对不严格JSON格式的容忍度（对请求体影响较小）
-}
-
-@Composable
-fun ConfirmActionDialog(
-    title: String,
-    text: String,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = { Text(text) },
-        confirmButton = { TextButton(onClick = { onConfirm(); onDismiss() }) { Text("确认") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
-    )
 }
 
 // --- ChatScreen ---
