@@ -49,7 +49,11 @@ import com.nekolaska.klusterai.ui.components.SessionListDialog
 import com.nekolaska.klusterai.ui.components.SettingsDialog
 import com.nekolaska.klusterai.ui.components.StreamingResponseDialog
 import com.nekolaska.klusterai.ui.theme.KlusterAITheme
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
@@ -89,6 +93,7 @@ fun ChatScreen() {
     val clipboard = LocalClipboard.current
     val lifecycleOwner: LifecycleOwner = LocalLifecycleOwner.current // 获取生命周期所有者
     val coroutineScope = rememberCoroutineScope()
+    var currentApiCallJob by remember { mutableStateOf<Job?>(null) } // 用于追踪当前的API调用Job
 
     // --- 全局状态 ---
     var autoSaveOnSwitchSessionGlobalPref by remember { //全局自动保存偏好
@@ -150,7 +155,6 @@ fun ChatScreen() {
     data class ConfirmDialogState(val title: String, val text: String, val onConfirm: () -> Unit)
 
     var confirmDialogState by remember { mutableStateOf<ConfirmDialogState?>(null) }
-
 
     val allSessionMetas = remember { mutableStateListOf<SessionMeta>() }
 
@@ -502,6 +506,49 @@ fun ChatScreen() {
         }
     }
 
+    fun handlePartialOrInterruptedResponse(isCancelledByUser: Boolean = false) {
+        isLoading = false // 确保加载状态被重置
+        // showStreamingDialog = false; // 对话框可能已经被关闭或将被关闭
+
+        if (streamingContent.value.isNotBlank()) {
+            val (thinkPart, remainingPart) = extractThinkSection(streamingContent.value)
+            var contentToSave = remainingPart
+
+            val note: String = if (isCancelledByUser) {
+                "\n(用户手动中断)"
+            } else { // 其他原因的中断，例如网络错误或后台
+                "\n(回复可能不完整或因连接问题中断)"
+            }
+
+            if (remainingPart.isBlank() && !isCancelledByUser) { // 如果是空白且非用户中断，可能没必要保存
+                //Log.d("ChatScreen", "响应中断，但已接收内容为空白，不添加到历史。")
+                streamingContent.value = "" // 清空
+                return
+            }
+
+            contentToSave += note
+
+            val partialMessage = MessageData(
+                role = "assistant",
+                content = contentToSave,
+                thinkContent = thinkPart
+            )
+            // 决定插入位置，通常是追加
+            // 注意：此时 assistantMessageDraft 可能为 null，我们使用 streamingContent.value
+            processAndDisplayFinalResponse(partialMessage, null, null) // 使用 null 作为 insertionIndex 来追加
+            markAsModified() // 标记有更改
+            Toast.makeText(context, "回复已中断，部分内容可能已保存。", Toast.LENGTH_LONG).show()
+        } else if (isCancelledByUser) { // 用户手动中断但没有收到任何内容
+            Toast.makeText(context, "回复已中断。", Toast.LENGTH_SHORT).show()
+        }
+        streamingContent.value = "" // 确保清空
+    }
+
+    // interruptCurrentStream 函数现在可以调用 handlePartialOrInterruptedResponse
+    fun interruptCurrentStream() {
+        currentApiCallJob?.cancel("User interrupted stream")
+        handlePartialOrInterruptedResponse(isCancelledByUser = true) // 明确是用户中断
+    }
 
     fun triggerLLMRequest(historyForRequest: List<MessageData>, insertionIndex: Int? = null) {
         if (globalApiKey.isBlank()) {
@@ -530,62 +577,101 @@ fun ChatScreen() {
         lastAssistantMessageIdForVerification = null
         verificationResultForLastMessage = null
 
+        // 取消之前可能正在进行的API调用
+        currentApiCallJob?.cancel("New request started")
 
-        coroutineScope.launch {
+        currentApiCallJob = coroutineScope.launch {
             var fullResponse: String?
-            var assistantMessageDraft: MessageData? = null
+            var assistantMessageDraft: MessageData? = null // 发送给审查模型的当前回复
+            var operationCompletedSuccessfully = false // 标记操作是否正常完成
             try {
                 fullResponse = callLLMApi(
                     apiKey = globalApiKey,
                     modelApiName = activeModelApiName,
                     currentHistory = actualHistory,
                     settings = activeModelSettings,
-                    onChunkReceived = { chunk -> streamingContent.value += chunk }
+                    onChunkReceived = { chunk ->
+                        if (isActive) { // 检查协程是否仍然活动
+                            streamingContent.value += chunk
+                        }
+                    }
                 )
 
-                if (fullResponse != null && fullResponse.isNotBlank()) {
-                    val (thinkPart, remainingPart) = extractThinkSection(fullResponse)
-                    assistantMessageDraft = MessageData(
-                        role = "assistant",
-                        content = remainingPart,
-                        thinkContent = thinkPart
-                    )
-                } else if (streamingContent.value.isNotBlank() && fullResponse.isNullOrBlank()) {
-                    val (thinkPart, remainingPart) = extractThinkSection(streamingContent.value)
-                    assistantMessageDraft = MessageData(
-                        role = "assistant",
-                        content = remainingPart,
-                        thinkContent = thinkPart
-                    )
-                } else {
-                    errorMessage = "从API收到空响应。"
+                if (isActive) { // 仅当协程未被取消时处理结果
+                    if (fullResponse != null && fullResponse.isNotBlank()) {
+                        val (thinkPart, remainingPart) = extractThinkSection(fullResponse)
+                        assistantMessageDraft = MessageData(
+                            role = "assistant",
+                            content = remainingPart,
+                            thinkContent = thinkPart
+                        )
+                        operationCompletedSuccessfully = true
+                    } else if (streamingContent.value.isNotBlank() && fullResponse.isNullOrBlank()) {
+                        val (thinkPart, remainingPart) = extractThinkSection(streamingContent.value)
+                        assistantMessageDraft = MessageData(
+                            role = "assistant",
+                            content = remainingPart,
+                            thinkContent = thinkPart
+                        )
+                        operationCompletedSuccessfully = true // 视作一种完成，即使 fullResponse 为空
+                    } else {
+                        if(isActive) errorMessage = "从API收到空响应或无效响应。"
+                        // operationCompletedSuccessfully 保持 false
+                    }
                 }
             } catch (e: IOException) {
-                errorMessage = "API 调用错误: ${e.message}"; e.printStackTrace()
+                if (isActive) errorMessage = "API 调用错误 (网络问题?): ${e.message}"
             } catch (e: Exception) {
-                errorMessage = "发生未知错误: ${e.message}"; e.printStackTrace()
+                if (isActive && e !is CancellationException) { // 不要把正常的取消当作错误处理
+                    errorMessage = "发生未知错误: ${e.message}"; e.printStackTrace()
+                    // 如果是因为中断而取消，streamingContent 可能已有部分内容，interruptCurrentStream 会处理
+                    // 如果是新请求覆盖旧请求而取消，则 streamingContent 应该在下一次请求开始时清空
+                }
             } finally {
-                isLoading = false // 主 LLM 请求结束
-                if (assistantMessageDraft != null) {
-                    if (autoVerifyResponseGlobalPref) { // 检查自动审查偏好
-                        //Log.d("ChatScreen", "Auto-verification is ON. Triggering verification.")
-                        val contextForVerification = actualHistory.toMutableList() // 这是发送给主LLM的上下文
-                        contextForVerification.add(assistantMessageDraft) // 把主LLM的回复也加入，供审查模型参考
-                        triggerVerification(
-                            contextForVerification,
-                            assistantMessageDraft,
-                            insertionIndex
-                        )
+                // `isActive` 在 finally 块中可能不再可靠，因为协程可能正在完成其清理工作。
+                // 我们通过 `operationCompletedSuccessfully` 和 `e is CancellationException` 来判断。
+
+                isLoading = false // 总是在 finally 中重置 isLoading
+
+                if (operationCompletedSuccessfully && assistantMessageDraft != null) {
+                    // 正常完成，走审查流程或直接显示
+                    if (autoVerifyResponseGlobalPref) {
+                        val contextForVerification = actualHistory.toMutableList().apply { add(assistantMessageDraft) }
+                        lastAssistantMessageIdForVerification = assistantMessageDraft.id
+                        triggerVerification(contextForVerification, assistantMessageDraft, insertionIndex)
                     } else {
-                        //Log.d("ChatScreen", "Auto-verification is OFF. Displaying response directly.")
-                        processAndDisplayFinalResponse(
-                            assistantMessageDraft,
-                            null,
-                            insertionIndex
-                        )
+                        processAndDisplayFinalResponse(assistantMessageDraft, null, insertionIndex)
                     }
+                } else if (currentApiCallJob?.isCancelled == false && streamingContent.value.isNotBlank()) {
+                    // 非用户取消（例如网络错误）但收到了一些内容
+                    //Log.d("LLMRequest", "Operation failed but some content was streamed. Handling partial.")
+                    handlePartialOrInterruptedResponse(isCancelledByUser = false)
+                } else if (currentApiCallJob?.isCancelled == true && streamingContent.value.isNotBlank()) {
+                    // 被取消（可能是用户手动中断，或新请求覆盖，或后台）且有部分内容
+                    // 如果是用户手动中断，interruptCurrentStream 已经调用了 handlePartialOrInterruptedResponse
+                    // 如果是新请求覆盖旧请求，我们可能不希望保存旧请求的部分内容，因为 streamingContent.value 在新请求开始时会被清空。
+                    // 如果是后台等原因，可以考虑保存。
+                    // 为了避免重复处理用户手动中断，这里可以加个判断。
+                    // 但由于 interruptCurrentStream 内部会 cancel job，这里的 isCancelled 会为 true。
+                    // 一个更简单的方法是：如果 operationCompletedSuccessfully 是 false，并且 streamingContent 有值，
+                    // 并且我们没有明确地知道这是用户通过中断按钮触发的（这种情况由 interruptCurrentStream 单独处理），
+                    // 那么我们可以认为这是一个“意外”中断，并尝试保存。
+                    // 但 `interruptCurrentStream` 也会设置 isCancelled = true.
+                    // 所以，这里的逻辑是：如果不是成功完成，也不是用户通过中断按钮（因为那个有自己的Toast和处理），
+                    // 但是streamingContent有内容，那就可能是其他原因的中断。
+                    // **一个更简洁的做法是在 interruptCurrentStream 之外的取消（如后台、网络）都走这里的逻辑。**
+                    //Log.d("LLMRequest", "Job was cancelled and some content was streamed. Handling partial if not user-invoked interruption.")
+                    // 为了避免与 interruptCurrentStream 中的 handlePartialOrInterruptedResponse 重复调用，
+                    // 我们可以在 interruptCurrentStream 中加一个标记，或者让它不直接调用 handlePartial...
+                    // 暂时我们先这样，如果 interruptCurrentStream 先调用，它会清空 streamingContent.value。
+                    // 如果是其他原因的 CancellationException，这里可以捕获。
+                    handlePartialOrInterruptedResponse(isCancelledByUser = false) // 假设非用户手动按钮触发的中断
                 } else {
-                    //Log.e("LLMRequest", "主LLM未能生成有效回复，跳过审查。")
+                    // 失败且没有流式内容（或者流式内容为空）
+                    //Log.e("LLMRequest", "主LLM未能生成有效回复或流式内容为空。")
+                    if (errorMessage == null && isActive) { // 如果没有特定错误信息，给一个通用提示
+                         errorMessage = "未能获取回复。" // 这个可能过于笼统
+                    }
                 }
             }
         }
@@ -767,7 +853,8 @@ fun ChatScreen() {
                         verificationResult = if (message.role == "assistant") currentVerification else null,
                         onCopyFeedbackAndEdit = { _, feedback -> // originalQuery暂时为空，下面处理
                             // 找到这条助手消息之前的最近一条用户消息
-                            val assistantMessageIndex = conversationHistory.indexOfFirst { it.id == message.id }
+                            val assistantMessageIndex =
+                                conversationHistory.indexOfFirst { it.id == message.id }
                             var originalUserQuery = "我不记得之前问了什么，" // 默认值
 
                             if (assistantMessageIndex > 0) {
@@ -780,10 +867,17 @@ fun ChatScreen() {
                                 }
                             }
 
-                            val newPrompt = "根据以下反馈： “${feedback.take(200)}”\n请重新考虑或修正你对这个问题的回答：“${originalUserQuery.take(200)}”\n请直接给出修正后的回答："
+                            val newPrompt =
+                                "根据以下反馈： “${feedback.take(300)}”\n请重新考虑或修正你对这个问题的回答：“${
+                                    originalUserQuery.take(300)
+                                }”\n请直接给出修正后的回答："
                             userInput = newPrompt // 将构造好的提示填充到输入框
                             // 可以在这里加一个 Toast 提示用户输入框已填充
-                            Toast.makeText(context, "反馈已填充到输入框，请修改后发送", Toast.LENGTH_LONG).show()
+                            Toast.makeText(
+                                context,
+                                "反馈已填充到输入框，请修改后发送",
+                                Toast.LENGTH_LONG
+                            ).show()
                         }
                     ) { msg ->
                         messageForAction = msg
@@ -837,10 +931,14 @@ fun ChatScreen() {
 
                 // 如果当前没有活动会话，或者当前活动会话正在使用全局设置，则需要更新 activeXXX 状态
                 if (currentSessionId == null || (
-                            activeModelApiName == (allSessionMetas.find { it.id == currentSessionId }?.modelApiName ?: globalDefaultModelApiName) && // 检查是否之前用了全局的
-                                    activeSystemPrompt == (allSessionMetas.find { it.id == currentSessionId }?.systemPrompt ?: globalDefaultSystemPrompt) &&
-                                    activeModelSettings == (allSessionMetas.find { it.id == currentSessionId }?.modelSettings ?: globalDefaultModelSettings)
-                            )) {
+                            activeModelApiName == (allSessionMetas.find { it.id == currentSessionId }?.modelApiName
+                                ?: globalDefaultModelApiName) && // 检查是否之前用了全局的
+                                    activeSystemPrompt == (allSessionMetas.find { it.id == currentSessionId }?.systemPrompt
+                                ?: globalDefaultSystemPrompt) &&
+                                    activeModelSettings == (allSessionMetas.find { it.id == currentSessionId }?.modelSettings
+                                ?: globalDefaultModelSettings)
+                            )
+                ) {
                     updateActiveSessionSettings(null) // 这会使 activeXXX 更新为新的全局默认值
                 }
                 Toast.makeText(context, "全局默认设置已保存", Toast.LENGTH_SHORT).show()
@@ -995,7 +1093,8 @@ fun ChatScreen() {
     if (showStreamingDialog && isLoading) {
         StreamingResponseDialog(
             content = streamingContent.value,
-            onDismissRequest = { showStreamingDialog = false }
+            onDismissRequest = { showStreamingDialog = false }, // 用户点击外部或“隐藏”按钮
+            onInterruptStream = { interruptCurrentStream() }    // 用户点击“中断”按钮
         )
     }
 }

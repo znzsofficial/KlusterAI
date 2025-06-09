@@ -489,7 +489,7 @@ fun GlobalSettingsPage(
                 onCheckedChange = onAutoVerifyChange
             )
         }
-        ExpandableSettingSection(title = "默认模型与提示", initiallyExpanded = true) {
+        ExpandableSettingSection(title = "默认模型与提示", initiallyExpanded = false) {
             // ... (模型选择和系统提示的 UI，使用传入的 onXXXChange 回调)
             DefaultModelAndPromptSettings(
                 modelApiName = modelApiName,
