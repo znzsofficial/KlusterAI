@@ -20,7 +20,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.filled.Close // 用于中断按钮
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 
 @Composable
 fun StreamingResponseDialog(
@@ -29,17 +36,49 @@ fun StreamingResponseDialog(
     onInterruptStream: () -> Unit // 新增回调：中断流
 ) {
     val scrollState = rememberScrollState()
+    val coroutineScope = rememberCoroutineScope()
 
-    LaunchedEffect(content) {
-        // 只有当滚动条不满（即内容未填满可视区域的底部）或者已滚动到底部时，才在内容增加时继续滚动到底部
-        // 这样可以避免用户向上滚动查看时，新内容又把视图拉下去
-        if (scrollState.value == scrollState.maxValue || scrollState.maxValue == 0) {
-            scrollState.animateScrollTo(scrollState.maxValue)
+    // 状态：用户是否因为向上滚动而暂时禁用了自动滚动
+    var autoScrollEnabled by remember { mutableStateOf(true) }
+
+    // 当用户手动滚动时，决定是否禁用自动滚动
+    LaunchedEffect(scrollState) {
+        var previousValue = scrollState.value // 记录上一次的滚动位置
+        snapshotFlow { scrollState.value } // 创建一个Flow来观察滚动位置的变化
+            .distinctUntilChanged() // 只有当滚动位置真正改变时才发出新值
+            .collect { currentValue ->
+                // 如果用户向上滚动 (currentValue < previousValue)
+                // 并且滚动条没有在最底部 (允许一点误差)
+                if (currentValue < previousValue && currentValue < scrollState.maxValue - 10) { // 10px 误差
+                    if (autoScrollEnabled) {
+                        // Log.d("ScrollDebug", "User scrolled up, disabling auto-scroll.")
+                        autoScrollEnabled = false
+                    }
+                }
+                // 如果用户滚动到底部了
+                else if (currentValue >= scrollState.maxValue - 10) {
+                    if (!autoScrollEnabled) {
+                        // Log.d("ScrollDebug", "User scrolled to bottom, re-enabling auto-scroll.")
+                        autoScrollEnabled = true
+                    }
+                }
+                previousValue = currentValue
+            }
+    }
+
+    // 当新内容到达，或者可滚动区域变大时，如果允许自动滚动，则滚动到底部
+    LaunchedEffect(content, scrollState.maxValue) {
+        if (content.isNotBlank() && autoScrollEnabled) {
+            coroutineScope.launch {
+                // Log.d("ScrollDebug", "Content changed, auto-scrolling to: ${scrollState.maxValue}")
+                scrollState.animateScrollTo(scrollState.maxValue)
+            }
         }
     }
 
+
     AlertDialog(
-        onDismissRequest = onDismissRequest, // 点击外部或返回键时调用
+        onDismissRequest = onDismissRequest,
         title = { Text("实时回复中...") },
         text = {
             Column(
@@ -47,8 +86,8 @@ fun StreamingResponseDialog(
                     .fillMaxWidth()
                     .heightIn(
                         min = 100.dp,
-                        max = (LocalWindowInfo.current.containerSize.height * 0.4).dp
-                    ) // 最大高度为屏幕40%
+                        max = 400.dp
+                    )
                     .verticalScroll(scrollState)
             ) {
                 SelectionContainer {
