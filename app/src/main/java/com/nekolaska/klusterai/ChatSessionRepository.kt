@@ -9,6 +9,9 @@ import java.util.UUID
 import com.nekolaska.klusterai.data.DEFAULT_MODEL_API_NAME
 import com.nekolaska.klusterai.data.MessageData
 import com.nekolaska.klusterai.data.ModelSettings
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Serializable // 确保 MessageData 可序列化
 data class MessageDataSerializable( // 创建一个可序列化的版本，如果原始 MessageData 不能直接序列化
@@ -144,12 +147,51 @@ object ChatSessionRepository {
 
     fun generateNewSessionId(): String = UUID.randomUUID().toString()
 
-    fun suggestTitleFromMessages(messages: List<MessageData>): String {
-        val firstUserMessage = messages.firstOrNull { it.role == "user" && it.content.isNotBlank() }
-        return if (firstUserMessage != null) {
-            firstUserMessage.content.take(30).let { if (it.length == 30) "$it..." else it }
+    private fun generateDefaultChatTitle(): String {
+        val sdf = SimpleDateFormat("MM月dd日 HH:mm", Locale.getDefault())
+        return "新聊天 ${sdf.format(Date())}"
+    }
+
+    private fun String.smartTruncate(maxLength: Int): String {
+        val trimmed = this.replace(Regex("\\s+"), " ").trim() // 替换多个空白为一个，并trim
+        return if (trimmed.length > maxLength) {
+            trimmed.substring(0, (maxLength - 3).coerceAtLeast(0)) + "..." // 确保索引不为负
         } else {
-            "新聊天 ${System.currentTimeMillis() % 10000}" // 备用标题
+            trimmed
         }
+    }
+
+    fun suggestTitleFromMessages(messages: List<MessageData>, preferredMaxLength: Int = 30): String {
+        // 优先尝试从用户的第一条非空消息中提取
+        val firstUserMessageContent = messages.firstOrNull { it.role == "user" && it.content.isNotBlank() }?.content
+        if (firstUserMessageContent != null) {
+            // 尝试提取一些有意义的词汇
+            val words = firstUserMessageContent
+                .replace(Regex("\\p{Punct}+"), "") // 移除标点
+                .split(Regex("\\s+")) // 按空白分割
+                .filter { it.length > 1 } // 过滤掉太短的词
+
+            if (words.isNotEmpty()) {
+                val candidate = words.take(4).joinToString(" ") // 取前4个词
+                if (candidate.length > 5) { // 确保候选标题有一定意义
+                    return candidate.smartTruncate(preferredMaxLength)
+                }
+            }
+            // 如果提取词汇效果不好，回退到直接截断原始消息
+            return firstUserMessageContent.smartTruncate(preferredMaxLength)
+        }
+
+        // 如果没有用户消息，尝试从助手的第一条非空消息中提取（如果消息不是简单问候）
+        val firstAssistantMessageContent = messages.firstOrNull {
+            it.role == "assistant" && it.content.isNotBlank() &&
+                    !it.content.matches(Regex("^(你好|您好|Hello|Hi).*$", RegexOption.IGNORE_CASE)) // 简单过滤问候语
+        }?.content
+
+        if (firstAssistantMessageContent != null) {
+            return firstAssistantMessageContent.smartTruncate(preferredMaxLength)
+        }
+
+        // 如果都没有，返回基于时间的默认标题
+        return generateDefaultChatTitle()
     }
 }
