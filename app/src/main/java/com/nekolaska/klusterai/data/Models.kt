@@ -9,11 +9,12 @@ val availableModels = listOf(
     //ModelInfo("Kluster 可靠性检查", "klusterai/verify-reliability"),
     ModelInfo("Qwen3-235B-A22B", "Qwen/Qwen3-235B-A22B-FP8"),
     ModelInfo("Qwen2.5-VL 7B", "Qwen/Qwen2.5-VL-7B-Instruct"),
-    ModelInfo("Gemma 3 27B", "google/gemma-3-27b-it"),
-    ModelInfo("Meta Llama 3.1 8B", "klusterai/Meta-Llama-3.1-8B-Instruct-Turbo"),
     ModelInfo("Meta Llama 3.3 70B", "klusterai/Meta-Llama-3.3-70B-Instruct-Turbo"),
+    ModelInfo("Meta Llama 3.1 8B", "klusterai/Meta-Llama-3.1-8B-Instruct-Turbo"),
     ModelInfo("Meta Llama 4 Maverick", "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8"),
     ModelInfo("Meta Llama 4 Scout", "meta-llama/Llama-4-Scout-17B-16E-Instruct"),
+    ModelInfo("Gemma 3 27B", "google/gemma-3-27b-it"),
+    ModelInfo("Magistral Small", "mistralai/Magistral-Small-2506"),
     ModelInfo("Mistral NeMo", "mistralai/Mistral-Nemo-Instruct-2407"),
 )
 val DEFAULT_MODEL_API_NAME =

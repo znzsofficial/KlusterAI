@@ -70,7 +70,9 @@ dependencies {
     implementation(libs.markwon.ext.tables)
     implementation(libs.markwon.html)
     implementation(libs.markwon.linkify)
+    implementation(libs.markwon.inlineparser)
     implementation(libs.markwon.ext.tasklist)
+    implementation(libs.markwon.ext.latex)
 
     // image loader for markdown
     implementation(libs.coil3)

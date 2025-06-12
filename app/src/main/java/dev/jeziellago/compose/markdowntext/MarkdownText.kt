@@ -20,7 +20,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.widget.TextViewCompat
 import coil3.ImageLoader
@@ -45,8 +47,8 @@ fun MarkdownText(
     imageLoader: ImageLoader? = null,
     linkifyMask: Int = Linkify.EMAIL_ADDRESSES or Linkify.PHONE_NUMBERS or Linkify.WEB_URLS,
     enableSoftBreakAddsNewLine: Boolean = true,
-    syntaxHighlightColor: Color = MaterialTheme.colorScheme.primary,
-    syntaxHighlightTextColor: Color = MaterialTheme.colorScheme.primaryContainer,
+    syntaxHighlightColor: Color = MaterialTheme.colorScheme.primaryContainer,
+    syntaxHighlightTextColor: Color = MaterialTheme.colorScheme.onPrimaryContainer,
     headingBreakColor: Color = Color.Transparent,
     enableUnderlineForLink: Boolean = true,
     importForAccessibility: Int = View.IMPORTANT_FOR_ACCESSIBILITY_AUTO,
@@ -57,12 +59,23 @@ fun MarkdownText(
 ) {
     val defaultColor: Color = LocalContentColor.current
     val context: Context = LocalContext.current
+    val latexTextColor = style.color
+    val latexBackgroundColor = Color.Transparent
+    val density = LocalDensity.current
+    val latexFontSize = if (style.fontSize != TextUnit.Unspecified) {
+        style.fontSize.value * density.density
+    } else {
+        16f * density.density // Fallback to a default size
+    }
     val markdownRender: Markwon =
         remember {
             MarkdownRender.create(
                 context,
                 imageLoader,
                 linkifyMask,
+                latexFontSize,
+                latexTextColor,
+                latexBackgroundColor,
                 enableSoftBreakAddsNewLine,
                 syntaxHighlightColor,
                 syntaxHighlightTextColor,
