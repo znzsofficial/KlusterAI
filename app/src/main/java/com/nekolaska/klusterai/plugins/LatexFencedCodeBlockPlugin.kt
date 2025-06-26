@@ -11,8 +11,8 @@ import ru.noties.jlatexmath.JLatexMathDrawable
 
 class LatexFencedCodeBlockPlugin(
     private val textSize: Float,
-    @ColorInt private val textColor: Int,
-    @ColorInt private val backgroundColor: Int
+    @param:ColorInt private val textColor: Int,
+    @param:ColorInt private val backgroundColor: Int
 ) : AbstractMarkwonPlugin() {
 
     override fun configureVisitor(builder: MarkwonVisitor.Builder) {

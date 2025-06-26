@@ -36,7 +36,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -61,12 +60,16 @@ import androidx.compose.material3.Tab // 导入 Tab
 import androidx.compose.material3.TabRow // 导入 TabRow
 import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nekolaska.klusterai.BackupRestoreManager
 import com.nekolaska.klusterai.DEFAULT_API_URL
 import com.nekolaska.klusterai.ImportConflictStrategy
 import com.nekolaska.klusterai.R
+import com.nekolaska.klusterai.viewmodels.SettingsViewModel
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -75,30 +78,10 @@ import java.util.Date
 @OptIn(
     ExperimentalMaterial3Api::class,
     ExperimentalFoundationApi::class
-) // 添加 ExperimentalFoundationApi for Pager
+)
 @Composable
 fun SettingsDialog(
-    // --- 传入参数调整 ---
-    // 我们需要区分当前会话的值和全局默认值，即使在同一个对话框里
-    // 这意味着可能需要传入两套值，或者根据 currentSessionId 决定显示哪一套
-    // 为简化，我们先假设 SettingsDialog 内部处理值的显示切换，
-    // 但保存时，它需要知道当前激活的 Pager 页面是什么。
-
-    // 全局设置的值
-    globalApiUrl: String,
-    globalApiKey: String,
-    globalDefaultModelApiName: String,
-    globalDefaultSystemPrompt: String,
-    globalDefaultModelSettings: ModelSettings,
-    globalAutoSaveOnSwitch: Boolean,
-    globalAutoVerifyResponse: Boolean,
-    globalAutoShowStreamingDialogPref: Boolean, // 用于全局的 autoShow
-    globalIsTextSelectablePref: Boolean,    // 用于全局的 textSelectable
-
-    // 当前会话的值 (如果存在)
-    currentSessionModelApiName: String?, // 可空，表示没有活动会话或使用全局
-    currentSessionSystemPrompt: String?,
-    currentSessionModelSettings: ModelSettings?,
+    viewModel: SettingsViewModel = viewModel(), // 获取 ViewModel 实例
 
     // 回调
     onSaveGlobalDefaults: (
@@ -113,101 +96,25 @@ fun SettingsDialog(
     hasActiveSession: Boolean, // 标记是否有活动会话，用于启用/禁用“当前会话”Tab
     onChatHistoryImportedParent: () -> Unit,
 ) {
+    val uiState by viewModel.uiState.collectAsState() // 订阅 UI 状态
     val pagerState =
         rememberPagerState(pageCount = { if (hasActiveSession) 2 else 1 }) // 如果没有活动会话，只有全局页
     val coroutineScope = rememberCoroutineScope()
 
-    // --- 状态变量 ---
-    // 全局设置的状态
-    var apiUrlInputState by remember(globalApiUrl) { mutableStateOf(globalApiUrl) }
-    var apiKeyInputState by remember(globalApiKey) { mutableStateOf(globalApiKey) }
-    var globalModelApiNameState by remember(globalDefaultModelApiName) {
-        mutableStateOf(
-            globalDefaultModelApiName
-        )
+    // 当 Pager 实际滚动完成时，更新 ViewModel 中的 currentPagerPage
+    LaunchedEffect(pagerState.currentPage) {
+        viewModel.setCurrentPagerPage(pagerState.currentPage)
     }
-    var globalSystemPromptState by remember(globalDefaultSystemPrompt) {
-        mutableStateOf(
-            globalDefaultSystemPrompt
-        )
-    }
-    var globalAutoSaveState by remember(globalAutoSaveOnSwitch) {
-        mutableStateOf(
-            globalAutoSaveOnSwitch
-        )
-    }
-    var globalAutoVerifyState by remember(globalAutoVerifyResponse) {
-        mutableStateOf(
-            globalAutoVerifyResponse
-        )
-    }
-    var globalAutoShowDialogState by remember(globalAutoShowStreamingDialogPref) {
-        mutableStateOf(
-            globalAutoShowStreamingDialogPref
-        )
-    }
-    var globalIsTextSelectableState by remember(globalIsTextSelectablePref) {
-        mutableStateOf(
-            globalIsTextSelectablePref
-        )
-    }
-    var globalTempState by remember(globalDefaultModelSettings.temperature) {
-        mutableFloatStateOf(
-            globalDefaultModelSettings.temperature
-        )
-    }
-    var globalFreqPState by remember(globalDefaultModelSettings.frequencyPenalty) {
-        mutableFloatStateOf(
-            globalDefaultModelSettings.frequencyPenalty
-        )
-    }
-    var globalTopPState by remember(globalDefaultModelSettings.topP) {
-        mutableFloatStateOf(
-            globalDefaultModelSettings.topP
-        )
+    // 当 ViewModel 中的 currentPagerPage (可能由外部逻辑改变) 变化时，滚动 Pager
+    LaunchedEffect(uiState.currentPagerPage) {
+        if (pagerState.currentPage != uiState.currentPagerPage) {
+            coroutineScope.launch { pagerState.animateScrollToPage(uiState.currentPagerPage) }
+        }
     }
 
-    // 当前会话设置的状态 (如果 currentSessionXXX 为 null，则使用全局默认作为初始值，但不直接修改全局状态)
-    var sessionModelApiNameState by remember(
-        currentSessionModelApiName,
-        globalDefaultModelApiName
-    ) {
-        mutableStateOf(currentSessionModelApiName ?: globalDefaultModelApiName)
-    }
-    var sessionSystemPromptState by remember(
-        currentSessionSystemPrompt,
-        globalDefaultSystemPrompt
-    ) {
-        mutableStateOf(currentSessionSystemPrompt ?: globalDefaultSystemPrompt)
-    }
-    // 对于 ModelSettings，如果 currentSessionModelSettings 为null，则用全局的
-    val initialSessionSettings = currentSessionModelSettings ?: globalDefaultModelSettings
-    var sessionTempState by remember(initialSessionSettings.temperature) {
-        mutableFloatStateOf(
-            initialSessionSettings.temperature
-        )
-    }
-    var sessionFreqPState by remember(initialSessionSettings.frequencyPenalty) {
-        mutableFloatStateOf(
-            initialSessionSettings.frequencyPenalty
-        )
-    }
-    var sessionTopPState by remember(initialSessionSettings.topP) {
-        mutableFloatStateOf(
-            initialSessionSettings.topP
-        )
-    }
 
-    var modelDropdownExpanded by remember { mutableStateOf(false) }
-
-
-    // 当 Pager 页面切换时，如果从全局页切换到会话页（且会话页之前未初始化或需要刷新），
-    // 可能需要重新基于 currentSessionXXX 初始化会话页的状态。
-    // 但由于 remember 的 key 包含了 currentSessionXXX，它们应该在 currentSessionXXX 变化时自动重置。
-
-    val pages = mutableListOf("全局默认")
-    if (hasActiveSession) {
-        pages.add("当前会话")
+    val pages = remember(hasActiveSession) {
+        mutableListOf("全局默认").apply { if (hasActiveSession) add("当前会话") }
     }
 
     AlertDialog(
@@ -263,108 +170,101 @@ fun SettingsDialog(
                 ) { pageIndex ->
                     Column(
                         modifier = Modifier
-                            .padding(8.dp)
-                            .padding(horizontal = 16.dp, vertical = 8.dp) // 给每页内容统一的内边距
-                            .wrapContentHeight() // 让页面内容也包裹高度
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .wrapContentHeight()
                     ) {
                         when (pageIndex) {
-                            0 -> { // 全局默认设置页
-                                GlobalSettingsPage(
-                                    onChatHistoryImported = onChatHistoryImportedParent,
-                                    apiKey = apiKeyInputState,
-                                    onApiKeyChange = { apiKeyInputState = it },
-                                    apiUrl = apiUrlInputState,
-                                    onApiUrlChange = { apiUrlInputState = it },
-                                    modelApiName = globalModelApiNameState,
-                                    onModelApiNameChange = { globalModelApiNameState = it },
-                                    systemPrompt = globalSystemPromptState,
-                                    onSystemPromptChange = { globalSystemPromptState = it },
-                                    autoSave = globalAutoSaveState,
-                                    onAutoSaveChange = { globalAutoSaveState = it },
-                                    autoVerify = globalAutoVerifyState,
-                                    onAutoVerifyChange = { globalAutoVerifyState = it },
-                                    temp = globalTempState,
-                                    onTempChange = { globalTempState = it },
-                                    freqP = globalFreqPState,
-                                    onFreqPChange = { globalFreqPState = it },
-                                    topP = globalTopPState,
-                                    onTopPChange = { globalTopPState = it },
-                                    autoShowDialog = globalAutoShowDialogState,
-                                    onAutoShowDialogChange = { globalAutoShowDialogState = it },
-                                    isTextSelectable = globalIsTextSelectableState,
-                                    onIsTextSelectableChange = { globalIsTextSelectableState = it },
-                                    modelDropdownExpanded = modelDropdownExpanded,
-                                    onModelDropdownExpandedChange = { modelDropdownExpanded = it }
-                                )
-                            }
+                            0 -> GlobalSettingsPage(
+                                apiKey = uiState.apiKey,
+                                onApiKeyChange = viewModel::updateApiKey,
+                                apiUrl = uiState.apiUrl,
+                                onApiUrlChange = viewModel::updateApiUrl,
+                                modelApiName = uiState.globalModelApiName,
+                                onModelApiNameChange = viewModel::updateGlobalModelApiName,
+                                systemPrompt = uiState.globalSystemPrompt,
+                                onSystemPromptChange = viewModel::updateGlobalSystemPrompt,
+                                autoSave = uiState.globalAutoSaveOnSwitch,
+                                onAutoSaveChange = viewModel::updateGlobalAutoSave,
+                                autoVerify = uiState.globalAutoVerifyResponse,
+                                onAutoVerifyChange = viewModel::updateGlobalAutoVerify,
+                                // 从 uiState.globalModelSettings 中取值
+                                temp = uiState.globalModelSettings.temperature,
+                                onTempChange = viewModel::updateGlobalTemperature,
+                                freqP = uiState.globalModelSettings.frequencyPenalty,
+                                onFreqPChange = viewModel::updateGlobalFrequencyPenalty,
+                                topP = uiState.globalModelSettings.topP,
+                                onTopPChange = viewModel::updateGlobalTopP,
+                                // 全局的 autoShow 和 textSelectable
+                                autoShowDialog = uiState.globalAutoShowStreamingDialog,
+                                onAutoShowDialogChange = viewModel::updateGlobalAutoShowDialog,
+                                isTextSelectable = uiState.globalIsTextSelectable,
+                                onIsTextSelectableChange = viewModel::updateGlobalIsTextSelectable,
 
-                            1 -> { // 当前会话设置页 (仅当 hasActiveSession)
-                                SessionSettingsPage(
-                                    modelApiName = sessionModelApiNameState,
-                                    onModelApiNameChange = {
-                                        sessionModelApiNameState = it
-                                        // 立即回调以更新 ChatScreen 中的 active 状态
-                                        onUpdateCurrentSessionSettings(
-                                            it, sessionSystemPromptState,
-                                            ModelSettings(
-                                                sessionTempState,
-                                                sessionFreqPState,
-                                                sessionTopPState,
-                                            )
+                                modelDropdownExpanded = uiState.modelDropdownExpanded,
+                                onModelDropdownExpandedChange = viewModel::setModelDropdownExpanded,
+                                onChatHistoryImported = onChatHistoryImportedParent
+                            )
+
+                            1 -> if (hasActiveSession) SessionSettingsPage(
+                                modelApiName = uiState.sessionModelApiName,
+                                onModelApiNameChange = { newName ->
+                                    viewModel.updateSessionModelApiName(newName)
+                                    // 立即回调，因为会话设置的持久化依赖外部
+                                    onUpdateCurrentSessionSettings(
+                                        newName,
+                                        uiState.sessionSystemPrompt,
+                                        uiState.sessionModelSettings.copy(
+                                            temperature = uiState.sessionModelSettings.temperature,
+                                            frequencyPenalty = uiState.sessionModelSettings.frequencyPenalty,
+                                            topP = uiState.sessionModelSettings.topP
                                         )
-                                    },
-                                    systemPrompt = sessionSystemPromptState,
-                                    onSystemPromptChange = {
-                                        sessionSystemPromptState = it
-                                        onUpdateCurrentSessionSettings(
-                                            sessionModelApiNameState, it,
-                                            ModelSettings(
-                                                sessionTempState,
-                                                sessionFreqPState,
-                                                sessionTopPState,
-                                            )
+                                    )
+                                },
+                                systemPrompt = uiState.sessionSystemPrompt,
+                                onSystemPromptChange = { newPrompt ->
+                                    viewModel.updateSessionSystemPrompt(newPrompt)
+                                    onUpdateCurrentSessionSettings(
+                                        uiState.sessionModelApiName,
+                                        newPrompt,
+                                        uiState.sessionModelSettings.copy(
+                                            temperature = uiState.sessionModelSettings.temperature,
+                                            frequencyPenalty = uiState.sessionModelSettings.frequencyPenalty,
+                                            topP = uiState.sessionModelSettings.topP
                                         )
-                                    },
-                                    temp = sessionTempState,
-                                    onTempChange = {
-                                        sessionTempState = it
-                                        onUpdateCurrentSessionSettings(
-                                            sessionModelApiNameState, sessionSystemPromptState,
-                                            ModelSettings(
-                                                it,
-                                                sessionFreqPState,
-                                                sessionTopPState,
-                                            )
-                                        )
-                                    },
-                                    freqP = sessionFreqPState,
-                                    onFreqPChange = {
-                                        sessionFreqPState = it
-                                        onUpdateCurrentSessionSettings(
-                                            sessionModelApiNameState, sessionSystemPromptState,
-                                            ModelSettings(
-                                                sessionTempState,
-                                                it,
-                                                sessionTopPState,
-                                            )
-                                        )
-                                    },
-                                    topP = sessionTopPState,
-                                    onTopPChange = {
-                                        sessionTopPState = it
-                                        onUpdateCurrentSessionSettings(
-                                            sessionModelApiNameState, sessionSystemPromptState,
-                                            ModelSettings(
-                                                sessionTempState,
-                                                sessionFreqPState,
-                                                it,
-                                            )
-                                        )
-                                    },
-                                    modelDropdownExpanded = modelDropdownExpanded,
-                                    onModelDropdownExpandedChange = { modelDropdownExpanded = it },
-                                )
-                            }
+                                    )
+                                },
+                                // 从 uiState.sessionModelSettings 中取值并传递对应的 ViewModel 更新方法
+                                temp = uiState.sessionModelSettings.temperature,
+                                onTempChange = { newTemp ->
+                                    viewModel.updateSessionTemperature(newTemp)
+                                    onUpdateCurrentSessionSettings(
+                                        uiState.sessionModelApiName,
+                                        uiState.sessionSystemPrompt,
+                                        uiState.sessionModelSettings.copy(temperature = newTemp)
+                                    )
+                                },
+                                freqP = uiState.sessionModelSettings.frequencyPenalty,
+                                onFreqPChange = { newFreqP ->
+                                    viewModel.updateSessionFrequencyPenalty(newFreqP)
+                                    onUpdateCurrentSessionSettings(
+                                        uiState.sessionModelApiName,
+                                        uiState.sessionSystemPrompt,
+                                        uiState.sessionModelSettings.copy(frequencyPenalty = newFreqP)
+                                    )
+                                },
+                                topP = uiState.sessionModelSettings.topP,
+                                onTopPChange = { newTopP ->
+                                    viewModel.updateSessionTopP(newTopP)
+                                    onUpdateCurrentSessionSettings(
+                                        uiState.sessionModelApiName,
+                                        uiState.sessionSystemPrompt,
+                                        uiState.sessionModelSettings.copy(topP = newTopP)
+                                    )
+                                },
+                                // SessionSettingsPage 不再需要 autoShowDialog 和 isTextSelectable，因为它们是全局的
+                                modelDropdownExpanded = uiState.modelDropdownExpanded,
+                                onModelDropdownExpandedChange = viewModel::setModelDropdownExpanded
+                            )
                         }
                     }
                 }
@@ -372,39 +272,24 @@ fun SettingsDialog(
         },
         confirmButton = {
             TextButton(onClick = {
-                if (pagerState.currentPage == 0) { // 如果当前是全局设置页
-                    val globalSettings = ModelSettings(
-                        temperature = globalTempState,
-                        frequencyPenalty = globalFreqPState,
-                        topP = globalTopPState,
-                    )
+                if (uiState.currentPagerPage == 0) {
                     onSaveGlobalDefaults(
-                        globalAutoSaveState, globalAutoVerifyState,
-                        globalAutoShowDialogState, globalIsTextSelectableState, // 传递新的全局偏好
-                        apiKeyInputState, apiUrlInputState,
-                        globalModelApiNameState, globalSystemPromptState, globalSettings
+                        uiState.globalAutoSaveOnSwitch, uiState.globalAutoVerifyResponse,
+                        uiState.globalAutoShowStreamingDialog, uiState.globalIsTextSelectable,
+                        uiState.apiKey, uiState.apiUrl,
+                        uiState.globalModelApiName, uiState.globalSystemPrompt,
+                        uiState.globalModelSettings // 这个对象包含了 temp, freqP, topP
                     )
-                } else { // 当前是会话设置页
-                    // 会话设置的更改通过 onUpdateCurrentSessionSettings 已实时反馈给 ChatScreen
-                    // 这里的“保存”按钮对于会话页可以只是关闭对话框，
-                    // 或者也可以触发一次 onUpdate (虽然可能重复，但确保最终状态)
-                    // 或者，会话页的更改应由ChatScreen的“保存会话”按钮持久化。
-                    // 为简单起见，这里的“保存”主要针对全局设置页。
-                    // 如果在会话页点击“保存”，我们假设更改已通过回调传递。
-                    if (hasActiveSession) { // 确保会话页存在
-                        val sessionSettings = ModelSettings(
-                            temperature = sessionTempState,
-                            frequencyPenalty = sessionFreqPState,
-                            topP = sessionTopPState,
-                        )
-                        onUpdateCurrentSessionSettings( // 再次调用以确保同步
-                            sessionModelApiNameState,
-                            sessionSystemPromptState,
-                            sessionSettings
-                        )
-                        // 注意：会话设置的持久化应该由 ChatScreen 的“保存会话”按钮完成
-                        // 这个对话框的保存按钮主要是为了保存全局设置。
-                    }
+                } else if (hasActiveSession) {
+                    // 对于会话设置，当用户修改时，onUpdateCurrentSessionSettings 已经实时更新了 ChatScreen 的 activeXXX 状态
+                    // 所以这里的 "应用更改" 按钮主要是为了关闭对话框。
+                    // ChatScreen 的 "保存会话" 按钮负责持久化这些 activeXXX 状态到 SessionMeta。
+                    // 确保最新的修改通过 onUpdateCurrentSessionSettings 回调出去
+                    onUpdateCurrentSessionSettings(
+                        uiState.sessionModelApiName,
+                        uiState.sessionSystemPrompt,
+                        uiState.sessionModelSettings
+                    )
                 }
                 onDismiss()
             }) { Text(if (pagerState.currentPage == 0 || !hasActiveSession) "保存全局" else "应用更改") } // 按钮文本根据页面变化

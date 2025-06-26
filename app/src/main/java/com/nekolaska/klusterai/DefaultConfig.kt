@@ -1,5 +1,6 @@
 package com.nekolaska.klusterai
 
+import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
@@ -25,3 +26,14 @@ val okHttpClient: OkHttpClient = OkHttpClient.Builder()
     .readTimeout(300, TimeUnit.SECONDS)
     .writeTimeout(300, TimeUnit.SECONDS)
     .build()
+
+// Json 实例，用于序列化请求体
+// encodeDefaults = false: 如果属性值等于其在数据类中定义的默认值，则不序列化该属性。
+// 对于可选参数，通常在数据类中将它们设为可空并默认值为 null。
+// kotlinx.serialization 默认不序列化值为 null 的属性 (除非 explicitNulls = true)。
+val jsonRequestBuilder = Json {
+    prettyPrint = false // API 请求通常不需要美化打印
+    encodeDefaults = false // 重要：如果属性值等于其默认值，则不序列化。
+    ignoreUnknownKeys = true // 解析响应时仍然有用（虽然这里主要用于序列化）
+    isLenient = true         // 增加对不严格JSON格式的容忍度（对请求体影响较小）
+}

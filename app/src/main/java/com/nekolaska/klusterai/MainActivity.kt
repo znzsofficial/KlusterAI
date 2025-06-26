@@ -30,6 +30,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nekolaska.klusterai.data.ApiRequestBody
 import com.nekolaska.klusterai.data.ApiRequestMessage
 import com.nekolaska.klusterai.data.ConfirmDialogState
@@ -50,6 +51,7 @@ import com.nekolaska.klusterai.ui.components.SettingsDialog
 import com.nekolaska.klusterai.ui.components.StreamingResponseDialog
 import com.nekolaska.klusterai.ui.components.VerificationInProgressIndicator
 import com.nekolaska.klusterai.ui.theme.KlusterAITheme
+import com.nekolaska.klusterai.viewmodels.SettingsViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -58,7 +60,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
-import kotlinx.serialization.json.Json
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -75,21 +76,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// Json 实例，用于序列化请求体
-// encodeDefaults = false: 如果属性值等于其在数据类中定义的默认值，则不序列化该属性。
-// 对于可选参数，通常在数据类中将它们设为可空并默认值为 null。
-// kotlinx.serialization 默认不序列化值为 null 的属性 (除非 explicitNulls = true)。
-private val jsonRequestBuilder = Json {
-    prettyPrint = false // API 请求通常不需要美化打印
-    encodeDefaults = false // 重要：如果属性值等于其默认值，则不序列化。
-    ignoreUnknownKeys = true // 解析响应时仍然有用（虽然这里主要用于序列化）
-    isLenient = true         // 增加对不严格JSON格式的容忍度（对请求体影响较小）
-}
-
-// --- ChatScreen ---
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun ChatScreen() {
+fun ChatScreen(settingsViewModel: SettingsViewModel = viewModel()) {
     val context = LocalContext.current
     val clipboard = LocalClipboard.current
     val lifecycleOwner: LifecycleOwner = LocalLifecycleOwner.current // 获取生命周期所有者
@@ -906,21 +895,22 @@ fun ChatScreen() {
     }
 
     if (showSettingsDialog) {
+        // 初始化 ViewModel 的状态 (只在对话框打开时做一次，或 ViewModel 内部用 LaunchedEffect 初始化)
+        LaunchedEffect(Unit) { // 确保只在对话框首次显示时初始化（如果 viewModel 是 remember 实例）
+            settingsViewModel.initializeSettings(
+                gApiKey = globalApiKey, gApiUrl = globalApiUrl, gModelName = globalDefaultModelApiName,
+                gSystemPrompt = globalDefaultSystemPrompt, gModelSettings = globalDefaultModelSettings,
+                gAutoSave = autoSaveOnSwitchSessionGlobalPref, gAutoVerify = autoVerifyResponseGlobalPref,
+                gAutoShowDialog = globalAutoShowStreamingDialogPref, gIsTextSelectable = globalIsTextSelectablePref,
+                hasActiveSession = currentSessionId != null,
+                sModelName = if (currentSessionId != null) activeModelApiName else null,
+                sSystemPrompt = if (currentSessionId != null) activeSystemPrompt else null,
+                sModelSettings = if (currentSessionId != null) activeModelSettings else null
+            )
+        }
+
         SettingsDialog(
-            globalApiKey = globalApiKey,
-            globalApiUrl = globalApiUrl,
-            globalDefaultModelApiName = globalDefaultModelApiName,
-            globalDefaultSystemPrompt = globalDefaultSystemPrompt,
-            globalDefaultModelSettings = globalDefaultModelSettings,
-            globalAutoSaveOnSwitch = autoSaveOnSwitchSessionGlobalPref,
-            globalAutoVerifyResponse = autoVerifyResponseGlobalPref,
-            globalAutoShowStreamingDialogPref = globalAutoShowStreamingDialogPref,
-            globalIsTextSelectablePref = globalIsTextSelectablePref,
-
-            currentSessionModelApiName = if (currentSessionId != null) activeModelApiName else null,
-            currentSessionSystemPrompt = if (currentSessionId != null) activeSystemPrompt else null,
-            currentSessionModelSettings = if (currentSessionId != null) activeModelSettings else null,
-
+            viewModel = settingsViewModel, // 传递 ViewModel
             onSaveGlobalDefaults = { autoSave, autoVerify, autoShow, selectable, apiKey, apiUrl, modelName, prompt, settings ->
                 // 更新 ChatScreen 中的全局状态
                 autoSaveOnSwitchSessionGlobalPref = autoSave
@@ -932,8 +922,6 @@ fun ChatScreen() {
                 globalDefaultModelApiName = modelName
                 globalDefaultSystemPrompt = prompt
                 globalDefaultModelSettings = settings
-
-                // 持久化到 SharedPreferences
                 SharedPreferencesUtils.apply {
                     saveAutoSaveOnSwitchPreference(context, autoSave)
                     saveAutoVerifyPreference(context, autoVerify)
@@ -945,39 +933,22 @@ fun ChatScreen() {
                     saveSystemPrompt(context, prompt)
                     saveGlobalModelSettings(context, settings)
                 }
-
-                // 如果当前没有活动会话，或者当前活动会话正在使用全局设置，则需要更新 activeXXX 状态
-                if (currentSessionId == null || (
-                            activeModelApiName == (allSessionMetas.find { it.id == currentSessionId }?.modelApiName
-                                ?: globalDefaultModelApiName) && // 检查是否之前用了全局的
-                                    activeSystemPrompt == (allSessionMetas.find { it.id == currentSessionId }?.systemPrompt
-                                ?: globalDefaultSystemPrompt) &&
-                                    activeModelSettings == (allSessionMetas.find { it.id == currentSessionId }?.modelSettings
-                                ?: globalDefaultModelSettings)
-                            )
-                ) {
-                    updateActiveSessionSettings(null) // 这会使 activeXXX 更新为新的全局默认值
-                }
+                if (currentSessionId == null) { updateActiveSessionSettings(null) }
                 Toast.makeText(context, "全局默认设置已保存", Toast.LENGTH_SHORT).show()
             },
             onUpdateCurrentSessionSettings = { modelName, prompt, settings ->
-                // 当用户在“当前会话”页更改设置时，立即更新 ChatScreen 的 active 状态
-                // 并标记会话已修改，等待用户在 ChatScreen 点击“保存会话”来持久化
                 if (currentSessionId != null) {
                     activeModelApiName = modelName
                     activeSystemPrompt = prompt
                     activeModelSettings = settings
-                    updateSystemMessageInHistory(conversationHistory, prompt) // 更新聊天记录中的系统消息
+                    updateSystemMessageInHistory(conversationHistory, prompt)
                     markAsModified()
-                    //Toast.makeText(context, "当前会话设置已更改 (待保存)", Toast.LENGTH_SHORT).show()
+                    // Toast.makeText(context, "当前会话设置已更改 (待保存)", Toast.LENGTH_SHORT).show() // 这个Toast可能太频繁
                 }
             },
             onDismiss = { showSettingsDialog = false },
             hasActiveSession = currentSessionId != null,
-            onChatHistoryImportedParent = {
-                triggerRefresh = !triggerRefresh // 触发会话列表刷新
-                // onDismiss() // 导入成功后可以选择是否立即关闭对话框
-            },
+            onChatHistoryImportedParent = { triggerRefresh = !triggerRefresh }
         )
     }
 
@@ -1209,7 +1180,7 @@ suspend fun callLLMApi(
 
     // 5. 构建 OkHttp Request
     val request = Request.Builder()
-        .url(apiUrl) // 确保 API_URL 是正确的常量
+        .url(apiUrl)
         .header("Authorization", "Bearer $apiKey")
         .header("Content-Type", "application/json")
         .post(payloadString.toRequestBody("application/json".toMediaTypeOrNull()))
