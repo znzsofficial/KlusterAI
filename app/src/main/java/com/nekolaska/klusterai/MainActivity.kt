@@ -111,6 +111,9 @@ fun ChatScreen() {
         mutableStateOf(SharedPreferencesUtils.loadGlobalIsTextSelectable(context))
     }
 
+    var globalApiUrl by remember {
+        mutableStateOf(SharedPreferencesUtils.loadApiUrl(context, DEFAULT_API_URL))
+    }
     var globalApiKey by remember {
         mutableStateOf(SharedPreferencesUtils.loadApiKey(context, DEFAULT_API_KEY_FALLBACK))
     }
@@ -465,7 +468,8 @@ fun ChatScreen() {
 //                    topP = 0.1f,
 //                )
 
-                completeJsonResponseFromApi = callLLMApi( // 使用现有的 callLLMApi
+                completeJsonResponseFromApi = callLLMApi(
+                    apiUrl = globalApiUrl,
                     apiKey = globalApiKey,
                     modelApiName = VERIFICATION_MODEL_NAME,
                     currentHistory = verificationMessages, // 包含审查指令
@@ -606,6 +610,7 @@ fun ChatScreen() {
             var operationCompletedSuccessfully = false // 标记操作是否正常完成
             try {
                 fullResponse = callLLMApi(
+                    apiUrl = globalApiUrl,
                     apiKey = globalApiKey,
                     modelApiName = activeModelApiName,
                     currentHistory = actualHistory,
@@ -903,6 +908,7 @@ fun ChatScreen() {
     if (showSettingsDialog) {
         SettingsDialog(
             globalApiKey = globalApiKey,
+            globalApiUrl = globalApiUrl,
             globalDefaultModelApiName = globalDefaultModelApiName,
             globalDefaultSystemPrompt = globalDefaultSystemPrompt,
             globalDefaultModelSettings = globalDefaultModelSettings,
@@ -915,13 +921,14 @@ fun ChatScreen() {
             currentSessionSystemPrompt = if (currentSessionId != null) activeSystemPrompt else null,
             currentSessionModelSettings = if (currentSessionId != null) activeModelSettings else null,
 
-            onSaveGlobalDefaults = { autoSave, autoVerify, autoShow, selectable, apiKey, modelName, prompt, settings ->
+            onSaveGlobalDefaults = { autoSave, autoVerify, autoShow, selectable, apiKey, apiUrl, modelName, prompt, settings ->
                 // 更新 ChatScreen 中的全局状态
                 autoSaveOnSwitchSessionGlobalPref = autoSave
                 autoVerifyResponseGlobalPref = autoVerify
                 globalAutoShowStreamingDialogPref = autoShow
                 globalIsTextSelectablePref = selectable
                 globalApiKey = apiKey
+                globalApiUrl = apiUrl
                 globalDefaultModelApiName = modelName
                 globalDefaultSystemPrompt = prompt
                 globalDefaultModelSettings = settings
@@ -933,6 +940,7 @@ fun ChatScreen() {
                     saveGlobalAutoShowStreamingDialog(context, autoShow)
                     saveGlobalIsTextSelectable(context, selectable)
                     saveApiKey(context, apiKey)
+                    saveApiUrl(context, apiUrl)
                     saveSelectedModel(context, modelName)
                     saveSystemPrompt(context, prompt)
                     saveGlobalModelSettings(context, settings)
@@ -1131,6 +1139,7 @@ fun updateSystemMessageInHistory(history: MutableList<MessageData>, systemPrompt
 }
 
 suspend fun callLLMApi(
+    apiUrl: String,
     apiKey: String,
     modelApiName: String,
     currentHistory: List<MessageData>, // 接收你的内部 MessageData 列表
@@ -1200,7 +1209,7 @@ suspend fun callLLMApi(
 
     // 5. 构建 OkHttp Request
     val request = Request.Builder()
-        .url(API_URL) // 确保 API_URL 是正确的常量
+        .url(apiUrl) // 确保 API_URL 是正确的常量
         .header("Authorization", "Bearer $apiKey")
         .header("Content-Type", "application/json")
         .post(payloadString.toRequestBody("application/json".toMediaTypeOrNull()))

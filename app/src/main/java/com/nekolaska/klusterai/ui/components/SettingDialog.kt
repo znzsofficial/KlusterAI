@@ -51,17 +51,22 @@ import com.nekolaska.klusterai.data.ModelSettings
 import com.nekolaska.klusterai.data.availableModels
 import java.util.Locale
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.pager.HorizontalPager // 导入 Pager
 import androidx.compose.foundation.pager.rememberPagerState // 导入 PagerState
 import androidx.compose.material3.Button
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Tab // 导入 Tab
 import androidx.compose.material3.TabRow // 导入 TabRow
 import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import com.nekolaska.klusterai.BackupRestoreManager
+import com.nekolaska.klusterai.DEFAULT_API_URL
 import com.nekolaska.klusterai.ImportConflictStrategy
+import com.nekolaska.klusterai.R
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -80,6 +85,7 @@ fun SettingsDialog(
     // 但保存时，它需要知道当前激活的 Pager 页面是什么。
 
     // 全局设置的值
+    globalApiUrl: String,
     globalApiKey: String,
     globalDefaultModelApiName: String,
     globalDefaultSystemPrompt: String,
@@ -98,7 +104,7 @@ fun SettingsDialog(
     onSaveGlobalDefaults: (
         autoSave: Boolean, autoVerify: Boolean,
         autoShowStreaming: Boolean, isTextSelectable: Boolean,
-        apiKey: String, modelApiName: String, systemPrompt: String, modelSettings: ModelSettings
+        apiKey: String, apiUrl: String, modelApiName: String, systemPrompt: String, modelSettings: ModelSettings
     ) -> Unit,
     onUpdateCurrentSessionSettings: ( // 当用户在“当前会话”页修改时，立即更新 ChatScreen 中的 activeXXX 状态
         modelApiName: String, systemPrompt: String, modelSettings: ModelSettings
@@ -113,6 +119,7 @@ fun SettingsDialog(
 
     // --- 状态变量 ---
     // 全局设置的状态
+    var apiUrlInputState by remember(globalApiUrl) { mutableStateOf(globalApiUrl) }
     var apiKeyInputState by remember(globalApiKey) { mutableStateOf(globalApiKey) }
     var globalModelApiNameState by remember(globalDefaultModelApiName) {
         mutableStateOf(
@@ -266,6 +273,8 @@ fun SettingsDialog(
                                     onChatHistoryImported = onChatHistoryImportedParent,
                                     apiKey = apiKeyInputState,
                                     onApiKeyChange = { apiKeyInputState = it },
+                                    apiUrl = apiUrlInputState,
+                                    onApiUrlChange = { apiUrlInputState = it },
                                     modelApiName = globalModelApiNameState,
                                     onModelApiNameChange = { globalModelApiNameState = it },
                                     systemPrompt = globalSystemPromptState,
@@ -372,7 +381,7 @@ fun SettingsDialog(
                     onSaveGlobalDefaults(
                         globalAutoSaveState, globalAutoVerifyState,
                         globalAutoShowDialogState, globalIsTextSelectableState, // 传递新的全局偏好
-                        apiKeyInputState,
+                        apiKeyInputState, apiUrlInputState,
                         globalModelApiNameState, globalSystemPromptState, globalSettings
                     )
                 } else { // 当前是会话设置页
@@ -412,6 +421,7 @@ fun SettingsDialog(
 @Composable
 fun GlobalSettingsPage(
     apiKey: String, onApiKeyChange: (String) -> Unit,
+    apiUrl: String, onApiUrlChange: (String) -> Unit,
     modelApiName: String, onModelApiNameChange: (String) -> Unit,
     systemPrompt: String, onSystemPromptChange: (String) -> Unit,
     autoSave: Boolean, onAutoSaveChange: (Boolean) -> Unit,
@@ -472,13 +482,39 @@ fun GlobalSettingsPage(
             OutlinedTextField(
                 value = apiKey,
                 onValueChange = onApiKeyChange,
-                label = { Text("API 密钥 (全局)") },
+                label = { Text("API 密钥") },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 8.dp, bottom = 8.dp),
                 singleLine = true,
                 placeholder = { Text("在此输入您的 API Key") }
             )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = apiUrl,
+                    onValueChange = onApiUrlChange, // 使用已有的回调
+                    label = { Text("API 地址") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    placeholder = { Text("例如：https://api.openai.com/v1/...") }
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                IconButton(onClick = {
+                    // 直接调用 onApiUrlChange，将值设置为默认常量
+                    onApiUrlChange(DEFAULT_API_URL)
+                }) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.restore),
+                        contentDescription = "恢复默认API地址"
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
         }
         ExpandableSettingSection(title = "数据管理", initiallyExpanded = false) {
             Button(

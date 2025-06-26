@@ -6,7 +6,7 @@ import java.util.concurrent.TimeUnit
 // --- 配置信息 ---
 const val DEFAULT_API_KEY_FALLBACK =
     "YOUR_DEFAULT_API_KEY_HERE" // SharedPreferences中无密钥时的备用值
-const val API_URL = "https://api.kluster.ai/v1/chat/completions"
+const val DEFAULT_API_URL = "https://api.kluster.ai/v1/chat/completions"
 const val DEFAULT_SYSTEM_PROMPT = """# 身份
 你是一个多功能AI助手，名为 KlusterAI。
 

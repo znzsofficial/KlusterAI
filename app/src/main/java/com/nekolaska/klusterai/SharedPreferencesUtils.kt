@@ -1,4 +1,3 @@
-// SharedPreferencesUtils.kt
 package com.nekolaska.klusterai
 
 import android.content.Context
@@ -9,6 +8,8 @@ import kotlinx.serialization.json.Json
 
 object SharedPreferencesUtils {
     private const val PREFS_NAME = "klusterai_prefs"
+
+    private const val KEY_API_URL = "api_url"
     private const val KEY_API_KEY = "api_key"
     private const val KEY_SELECTED_MODEL = "selected_model_api_name"
     private const val KEY_SYSTEM_PROMPT = "system_prompt"
@@ -42,6 +43,11 @@ object SharedPreferencesUtils {
     private fun load(context: Context, key: String, defaultValue: Boolean): Boolean {
         return getPreferences(context).getBoolean(key, defaultValue)
     }
+
+    fun saveApiUrl(context: Context, apiUrl: String) = save(context, KEY_API_URL, apiUrl)
+
+    fun loadApiUrl(context: Context, defaultValue: String): String =
+        load(context, KEY_API_URL, defaultValue)
 
     fun saveApiKey(context: Context, apiKey: String) = save(context, KEY_API_KEY, apiKey)
     fun loadApiKey(context: Context, defaultValue: String): String =

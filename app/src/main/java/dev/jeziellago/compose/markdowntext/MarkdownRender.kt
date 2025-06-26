@@ -23,6 +23,7 @@ import io.noties.markwon.html.HtmlPlugin
 import io.noties.markwon.inlineparser.MarkwonInlineParserPlugin
 import io.noties.markwon.linkify.LinkifyPlugin
 import androidx.core.graphics.drawable.toDrawable
+import com.nekolaska.klusterai.plugins.LatexFencedCodeBlockPlugin
 
 internal object MarkdownRender {
 
@@ -66,6 +67,13 @@ internal object MarkdownRender {
                 builder.theme().backgroundProvider { latexBackgroundColor.toArgb().toDrawable() }
                 builder.theme().textColor(latexTextColor.toArgb())
             })
+            .usePlugin(
+                LatexFencedCodeBlockPlugin(
+                    latexTextSizePx,
+                    latexTextColor.toArgb(),
+                    latexBackgroundColor.toArgb()
+                )
+            )
             .apply {
                 if (enableSoftBreakAddsNewLine) {
                     usePlugin(SoftBreakAddsNewLinePlugin.create())
